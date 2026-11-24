@@ -4,7 +4,7 @@
    Nothing in the story decides a number: rates and pressures come from the model, readings from the instruments. */
 import { createScene } from './scene.js?v=5';
 import { link, initTerms, bore, boreText, TERMS, open as openTerm } from './terms.js?v=2';
-import { createWell, dealWell, intervalScore, KPA, rng, hash } from './sim.js?v=1';
+import { createWell, dealWell, intervalScore, KPA } from './sim.js?v=1';
 
 const PH = window.PH, katex = window.katex, Plotly = window.Plotly, fmt = (x, d = 0) => (+x).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 const $ = (id) => document.getElementById(id);
@@ -24,12 +24,14 @@ let SC = null, stage = null;
 // ---------- the clock and the well ----------
 const day = () => Math.floor(G.hours / 24) + 1, clock = () => String(Math.floor(G.hours % 24)).padStart(2, '0') + ':00';
 const note = (type, data) => G.events.push(Object.assign({ day: day(), hour: +(G.hours % 24).toFixed(1), type }, data || {}));
-// what the instruments report for a stabilised setting: a dial to the nearest 5 psi, a gauge to the nearest 10 kPa, a separator repeatable to about 1 %
-function reading(S) { const o = G.well.operate(S), u = rng(hash(G.spec.seed + ':' + S))(); return { S, ptf: Math.round(o.ptf / 5) * 5, kpa: Math.round(o.pwf * KPA / 10) * 10, rate: S <= 0 ? 0 : Math.round(o.q * (1 + 0.012 * (2 * u - 1))) }; }
+// what the instruments report for a stabilised setting: the model's own numbers, rounded as an instrument shows them
+// (a dial to the nearest 5 psi, a gauge to the nearest 10 kPa, a meter to the nearest barrel a day). Nothing is added or taken away.
+function reading(S) { const o = G.well.operate(S); return { S, ptf: Math.round(o.ptf / 5) * 5, kpa: Math.round(o.pwf * KPA / 10) * 10, rate: S <= 0 ? 0 : Math.round(o.q) }; }
 function setChoke(S) { S = clamp(Math.round(S / 2) * 2, 0, 64); if (S === G.S) return; G.S = S; G.logged = false; G.stableFor = 0; note('choke', { S }); paintChoke(); }
 function logReading() {
   const r = reading(G.S), old = G.log.find(x => x.S === G.S), row = { day: day(), S: r.S, ptf: r.ptf, kpa: G.gauge ? r.kpa : null, rate: r.rate }; if (G.hideRate) row.wait = true;
   if (old) { if (old.kpa == null && row.kpa != null) { old.kpa = row.kpa; old.day = row.day; } } else G.log.push(row);
+  const o = G.well.operate(G.S); G.cur.q = o.q; G.cur.ptf = o.ptf; G.cur.pwf = o.pwf;                    // settled: from here the well is exactly at its operating point
   G.logged = true; note('reading', row); paintNeed(); paintChoke();
 }
 function tick(dt) {
@@ -61,10 +63,10 @@ const cam = (key, dur, visit) => { if (!visit) G.home = key; const k = SC.cams[k
 const dock = () => $('dock');
 function dockIdle(text) { dock().innerHTML = '<div class="idle">' + (text || '') + '</div>'; }
 let wheelUI = null, need = null;
-function paintChoke() { if (!wheelUI || !wheelUI.isConnected) return; wheelUI.querySelector('.wheel g').setAttribute('transform', 'rotate(' + (G.S * 22.5) + ' 56 56)'); wheelUI.querySelector('.rd b').innerHTML = G.S > 0 ? G.S + '<i>/64 in</i>' : 'Shut in'; wheelUI.querySelector('.bore').innerHTML = bore(G.S, 92); wheelUI.querySelector('.bt').textContent = G.S > 0 ? boreText(G.S).split(' = ').slice(1).join(' = ') : 'no hole: the well is closed';
+function paintChoke() { if (!wheelUI || !wheelUI.querySelector('.wheel g')) return; wheelUI.querySelector('.wheel g').setAttribute('transform', 'rotate(' + (G.S * 22.5) + ' 56 56)'); wheelUI.querySelector('.rd b').innerHTML = G.S > 0 ? G.S + '<i>/64 in</i>' : 'Shut in'; wheelUI.querySelector('.bore').innerHTML = bore(G.S, 92); wheelUI.querySelector('.bt').textContent = G.S > 0 ? boreText(G.S).split(' = ').slice(1).join(' = ') : 'no hole: the well is closed';
   const [dn, up] = wheelUI.querySelectorAll('.steps button'); dn.disabled = G.locked || G.S <= 0; up.disabled = G.locked || G.S >= G.cap; wheelUI.querySelector('.wheel').classList.toggle('locked', G.locked); wheelUI.querySelector('.rd span').textContent = G.locked ? 'The supervisor has the wheel.' : G.cap < 64 ? 'Up to ' + G.cap + '/64 for now. Drag the wheel.' : 'The dashed ring is one inch: 64/64.';
   const st = wheelUI.querySelector('.st'); st.textContent = G.log.length === 0 && G.S === 0 ? '' : G.logged ? 'Steady. Reading taken.' : 'Settling…'; st.hidden = !st.textContent; st.classList.toggle('ok', G.logged); }
-function paintNeed() { if (!need || !wheelUI || !wheelUI.isConnected) return; const flow = G.log.filter(r => r.S > 0 && r.kpa != null).length, shut = G.log.some(r => r.S === 0 && r.kpa != null); [...wheelUI.querySelectorAll('.need span:not(.st)')].forEach(n => n.remove()); wheelUI.querySelector('.need').insertAdjacentHTML('beforeend', '<span class="' + (flow >= need.flow ? 'ok' : '') + '">flowing readings ' + Math.min(flow, need.flow) + ' of ' + need.flow + '</span><span class="' + (shut ? 'ok' : '') + '">shut-in reading ' + (shut ? 'taken' : 'wanted') + '</span>'); }
+function paintNeed() { if (!need || !wheelUI || !wheelUI.querySelector('.need')) return; const flow = G.log.filter(r => r.S > 0 && r.kpa != null).length, shut = G.log.some(r => r.S === 0 && r.kpa != null); [...wheelUI.querySelectorAll('.need span:not(.st)')].forEach(n => n.remove()); wheelUI.querySelector('.need').insertAdjacentHTML('beforeend', '<span class="' + (flow >= need.flow ? 'ok' : '') + '">flowing readings ' + Math.min(flow, need.flow) + ' of ' + need.flow + '</span><span class="' + (shut ? 'ok' : '') + '">shut-in reading ' + (shut ? 'taken' : 'wanted') + '</span>'); }
 function dockChoke(cap, locked, needs) {
   G.cap = cap; G.locked = !!locked; need = needs || null;
   dock().innerHTML = '<h4>' + link('The choke') + '</h4><div class="choke"><svg class="wheel" viewBox="0 0 112 112" tabindex="0" aria-label="Choke handwheel"><g><circle cx="56" cy="56" r="46" fill="none" stroke="#A3261E" stroke-width="9"/>' +
