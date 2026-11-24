@@ -24,7 +24,11 @@ export function createWell(PH, w) {
     const q = (a + b) / 2, ptf = need(q);
     return cache[S] = { S, q, pwf: pwfOf(q), ptf, critical: PH.chokeP1(q, w.GLR, S) + 14.7 > w.pline, shut: false };
   }
-  return { spec: w, J, pb, ptfShut, operate, pwfOf, bhp };
+  // the three parts of the bottomhole pressure at a choke setting: what the wellhead holds, the weight of the column, friction
+  function split(S) { const o = operate(S); if (S <= 0) return { ptf: o.ptf, column: o.pwf - o.ptf, friction: 0, pwf: o.pwf, q: 0 };
+    const r = PH.traverse({ method: 'HB', depth: w.depth, dL: w.depth / N, ptf: o.ptf, Tsurf: w.T, D: w.D, eps: 0.0006, fluid: fluid(o.q) }); let hyd = 0; r.profile.slice(1).forEach(s => { hyd += s.dpdzPE * w.depth / N; });
+    return { ptf: o.ptf, column: hyd, friction: Math.max(0, o.pwf - o.ptf - hyd), pwf: o.pwf, q: o.q }; }
+  return { spec: w, J, pb, ptfShut, operate, pwfOf, bhp, split };
 }
 
 // A small deterministic generator, so that a student number always gives the same well and the same gauge noise.

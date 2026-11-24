@@ -85,6 +85,13 @@
   .msg.rulemsg { border: 2px solid var(--ku); background: #F4F7FD; } .msg.rulemsg small { display: block; font: 700 10px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ku); } .msg.rulemsg > b { display: block; font: 600 18px var(--display); color: var(--ink); margin: 2px 0 4px; } .msg.rulemsg .k { font-size: 15px; overflow-x: auto; overflow-y: hidden; } .msg.rulemsg .k .katex-display { margin: 6px 0; } .msg.rulemsg p { margin: 4px 0 0; font-size: 13.5px; }
   .rulecard { border: 1.5px solid #C9D7F2; background: #F7F9FE; border-radius: 12px; padding: 9px 12px; margin-bottom: 8px; } .rulecard b { font: 600 15px var(--display); } .rulecard .k { font-size: 14px; margin: 3px 0; overflow-x: auto; overflow-y: hidden; } .rulecard small { color: var(--muted); font-size: 11.5px; }
   .endrule { display: flex; align-items: baseline; gap: 14px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.12); } .endrule b { flex: 0 0 46%; font: 600 15px var(--sans); } .endrule .eq { font-size: 15px; color: #fff; }
+  /* questioning an equation */
+  .ieq { font-size: 17px; overflow-x: auto; overflow-y: hidden; padding: 2px 0; } .ieq .katex-display { margin: 4px 0; } .ieq .iv { cursor: pointer; border-radius: 5px; padding: 1px 3px; transition: background .25s, color .25s; background: #EEF3FC; } .ieq .iv:hover { background: #DCE7FA; } .ieq .iv.on { background: var(--ku); color: #fff; }
+  .itell { margin: 4px 0 8px; font-size: 13.5px; line-height: 1.4; color: var(--body); min-height: 38px; } .ires { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; } .ires b { font: 600 19px var(--display); font-variant-numeric: tabular-nums; } .ires b i { font: 500 11.5px var(--sans); font-style: normal; color: var(--muted); } .ires > span { font: 600 9.5px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .iways { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; } .iways:empty { display: none; } .iways > span { min-width: 44px; text-align: center; padding: 3px 10px; border-radius: 999px; background: var(--paper2); color: var(--faint); font: 600 13px var(--sans); } .iways > span.ok { background: #E6F4EC; color: var(--green); font-size: 12.5px; }
+  .iplot { margin: 0 0 8px; } .iplot svg { display: block; width: 100%; height: 104px; background: #fff; border: 1px solid var(--line); border-radius: 10px; } .iplot .ax { fill: none; stroke: #C9C4B8; stroke-width: 1; vector-effect: non-scaling-stroke; } .iplot .ln { fill: none; stroke: var(--red); stroke-width: 2.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; } .iplot .dot { fill: var(--ink); }
+  .ixl { display: flex; justify-content: space-between; align-items: baseline; font: 500 11px var(--sans); color: var(--muted); margin-top: 2px; } .ixl b { font-weight: 600; color: var(--body); } .ixl i { font-style: normal; color: var(--faint); }
+  .ifoot { display: flex; gap: 8px; margin-top: 6px; } .ifoot:empty { display: none; }
   /* the choke wheel */
   .choke { display: grid; grid-template-columns: 92px 92px minmax(0, 1fr); gap: 12px; align-items: center; } .choke .bore { width: 92px; height: 92px; }
   .wheel { width: 92px; height: 92px; touch-action: none; cursor: grab; } .wheel:active { cursor: grabbing; } .wheel.locked { opacity: .45; cursor: default; }
@@ -146,7 +153,7 @@
 <script src="vendor/plotly.min.js"></script>
 <script src="physics.js?v=3"></script>
 <script type="module">
-import { start } from './game/act1.js?v=22';
+import { start } from './game/act1.js?v=25';
 start();
 </script>
 </body>

@@ -2,15 +2,15 @@
    The story is one async function at the bottom of this file; everything above it is the machinery it speaks through:
    a clock, a chat thread, a dock (choke wheel, bet, job card, law tool) and the notebook. The well itself is game/sim.js.
    Nothing in the story decides a number: rates and pressures come from the model, readings from the instruments. */
-import { createScene } from './scene.js?v=10';
-import { buildMissions } from './missions.js?v=1';
+import { createScene } from './scene.js?v=11';
+import { buildMissions } from './missions.js?v=3';
 import { link, initTerms, bore, boreText, TERMS, open as openTerm } from './terms.js?v=2';
-import { createWell, dealWell, intervalScore, KPA } from './sim.js?v=1';
+import { createWell, dealWell, KPA } from './sim.js?v=2';
 
 const PH = window.PH, katex = window.katex, Plotly = window.Plotly, fmt = (x, d = 0) => (+x).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, html, parent) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; if (parent) parent.appendChild(e); return e; };
-const tex = (s, node, display) => { katex.render(s, node, { displayMode: !!display, throwOnError: false }); return node; };
+const tex = (s, node, display) => { katex.render(s, node, { displayMode: !!display, throwOnError: false, trust: true, strict: false }); return node; };
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 
 const WHO = { name: 'Latifa', role: 'Field supervisor', initials: 'L' };                         // the voice on the phone
@@ -38,14 +38,15 @@ function logReading() {
 }
 function tick(dt) {
   if (!G.well) return;
-  const gh = dt * G.speed * PACE, tgt = G.well.operate(G.S), a = 1 - Math.exp(-dt * Math.min(G.speed, 4) / 0.9), c = G.cur;
-  G.hours += gh; c.q += (tgt.q - c.q) * a; c.ptf += (tgt.ptf - c.ptf) * a; c.pwf += (tgt.pwf - c.pwf) * a; G.barrels += c.q * gh / 24;
+  // G.over: a state set directly while an equation is being questioned ("what if"); it is shown, but nothing is logged or sold
+  const gh = dt * G.speed * PACE, tgt = G.over || G.well.operate(G.S), a = G.over ? 1 - Math.exp(-dt / 0.12) : 1 - Math.exp(-dt * Math.min(G.speed, 4) / 0.9), c = G.cur;
+  G.hours += gh; c.q += (tgt.q - c.q) * a; c.ptf += (tgt.ptf - c.ptf) * a; c.pwf += (tgt.pwf - c.pwf) * a; if (!G.over) G.barrels += c.q * gh / 24;
   const settled = Math.abs(c.q - tgt.q) <= Math.max(3, 0.01 * tgt.q) && Math.abs(c.ptf - tgt.ptf) < 6;
-  G.stableFor = settled ? G.stableFor + dt : 0; if (settled && !G.logged && G.stableFor > 1.0) logReading();
+  G.stableFor = settled ? G.stableFor + dt : 0; if (!G.over && settled && !G.logged && G.stableFor > 1.0) logReading();
   // the tank fills; a transfer pump empties it to the pipeline when it is nearly full
   const R = G.read; if (R.level > 0.86) G.pump = true; if (R.level < 0.24) G.pump = false; R.level = clamp(R.level + (c.q - (G.pump ? 9000 : 0)) * gh / 24 / 2400, 0, 1);
   R.show += (R.showTo - R.show) * (1 - Math.exp(-dt / 0.9)); R.S = G.S; R.gauge = G.gauge; R.turn += (G.S * TURN - R.turn) * (1 - Math.exp(-dt / 0.5));
-  R.ptf = Math.round(c.ptf / 5) * 5; R.kpa = Math.round(c.pwf * KPA / 10) * 10; R.rate = G.hideRate ? null : (G.logged ? reading(G.S).rate : Math.round(c.q));
+  R.ptf = Math.round(c.ptf / 5) * 5; R.kpa = Math.round(c.pwf * KPA / 10) * 10; R.rate = G.hideRate ? null : (G.logged && !G.over ? reading(G.S).rate : Math.round(c.q));
   const h = [day() + ' · ' + clock(), fmt(G.barrels) + ' bbl', '$' + fmt(G.barrels * ECON.price)]; ['hDay', 'hBbl', 'hUsd'].forEach((id, i) => { const n = $(id); if (n._s !== h[i]) { n.textContent = h[i]; n._s = h[i]; } });
   for (let i = G.waiters.length - 1; i >= 0; i--) { const w = G.waiters[i]; w.t += dt; if (w.test(w.t)) { G.waiters.splice(i, 1); w.resolve(); } }
 }
@@ -181,7 +182,7 @@ function endCard() {
 const exportLog = () => ({ game: 'First Well', chapter: 1, version: 2, player: { name: G.name, number: G.id }, well: { kind: G.spec.kind, seed: G.spec.seed }, missionsDone: Object.keys(G.done), rules: G.rules.map(r => r.name), readings: G.log, law: G.law && { variable: G.law.x, form: G.law.form, unit: unitText(G.law.unit, VARS[G.law.x]), c: G.law.c, miss: G.law.miss, productivityIndex: stamped(G.law) }, events: G.events });
 
 // ---------- the well explains itself: its state in words, any part on request, and a tour before the first move ----------
-function paintState() { const st = $('state'), flowing = G.S > 0, key = G.set !== 'well' ? 'none' : flowing ? 'flow' : 'shut'; if (st._k === key) return; if (key === 'none') { st._k = key; st.innerHTML = ''; return; } st._k = key; st.className = 'state ' + key; st.innerHTML = link(flowing ? 'flowing' : 'shut in') + '<small>' + (flowing ? 'the choke is open: oil is moving' : 'closed at the surface: nothing moves') + '</small>'; }
+function paintState() { const what = !!(G.over && !G.over.choke), st = $('state'), flowing = what ? G.cur.q > 1 : G.S > 0, key = G.set !== 'well' ? 'none' : (flowing ? 'flow' : 'shut') + (what ? ' what' : ''); G.read.what = what; if (st._k === key) return; if (key === 'none') { st._k = key; st.innerHTML = ''; return; } st._k = key; st.className = 'state ' + key; st.innerHTML = what ? (flowing ? 'flowing' : 'no flow') + '<small>what if: you are setting these numbers yourself</small>' : link(flowing ? 'flowing' : 'shut in') + '<small>' + (flowing ? 'the choke is open: oil is moving' : 'closed at the surface: nothing moves') + '</small>'; }
 function showPart(key, name) { if (!SC || !SC.anchors[key]) return; if (N.open) closeNotebook(); cam(key, 2.4, true); SC.point(key, name || SC.anchors[key].name); $('backBtn').hidden = false; note('show', { part: key }); }
 function backHome() { SC.unpoint(); $('backBtn').hidden = true; cam(G.home || 'play', 2.4); }
 const frameRect = (id) => () => { const n = $(id); if (!n || n.hidden || n.offsetWidth === 0) return null; const a = n.getBoundingClientRect(), f = $('labels').getBoundingClientRect(); return { x0: a.left - f.left - 6, y0: a.top - f.top - 6, x1: a.right - f.left + 6, y1: a.bottom - f.top + 6 }; };
@@ -244,6 +245,40 @@ function target(o) {
     G.waiters.push({ t: 0, test: (t) => { if (done) return true; const ok = paint(); held = ok ? held + (t - last) : 0; last = t; if (ok && held >= 0.9 && !o.impossible) { finish(); return true; } return false; }, resolve: () => { } });
   });
 }
+// ---------- questioning an equation: when is it zero, and what does each term do on its own ----------
+function interrogate(o) {
+  return new Promise(async (resolve) => {
+    const val = (x) => typeof x === 'function' ? x() : x, zs = o.vars.filter(v => v.zeroAt != null); G.inter = o; o.reset(); wheelUI = null; note('question', { eq: o.resultName });
+    dock().innerHTML = '<div class="iq"><h4>Question the equation</h4><div class="ieq"></div><p class="itell">Touch a symbol to see what it stands for.</p><div class="ires"><b></b><span>' + o.resultName + '</span></div><div class="iways"></div><div class="iplot" hidden><svg viewBox="0 0 300 110" preserveAspectRatio="none"><path class="ax" d="M30 6V96H296"/><polyline class="ln" points=""/><circle class="dot" r="4.5" cx="-9" cy="-9"/></svg><div class="ixl"><span></span><b></b><span></span></div></div></div>';
+    const q = (s) => dock().querySelector(s), eq = q('.ieq'), tell = q('.itell'), res = q('.ires b'), ways = q('.iways'), plot = q('.iplot'), box = el('div', 'ctls', null, dock()), foot = el('div', 'ifoot', null, dock());
+    tex(o.tex, eq, true); const all = Object.assign({}, o.tellsFor || {}); o.vars.forEach(v => { all[v.id] = v.tells; });
+    const focus = (id) => { eq.querySelectorAll('.iv').forEach(n => n.classList.toggle('on', n.classList.contains('iv-' + id))); tell.innerHTML = link(all[id]); };
+    Object.keys(all).forEach(id => eq.querySelectorAll('.iv-' + id).forEach(n => { n.classList.add('iv'); n.addEventListener('click', () => { focus(id); note('symbol', { id }); }); }));
+    o.vars.forEach(v => { control(v.ctl, box); const base = v.ctl.apply; v.ctl.apply = (x) => { base(x); focus(v.id); }; });
+    const paintRes = () => { res.innerHTML = o.show(o.metric()); }, repaint = () => { o.vars.forEach(v => v.ctl.paint()); paintRes(); }; let live = true;
+    G.waiters.push({ t: 0, test: () => { if (!live) return true; paintRes(); return false; }, resolve: () => { } });
+    // 1. when is it zero?
+    if (zs.length) {
+      await say(o.zeroAsk, 0.3); ways.innerHTML = zs.map(() => '<span>?</span>').join(''); const found = new Set(); let busy = false;
+      o.auto = () => { if (busy) return; const v = zs.find(z => !found.has(z.id)); if (v) { o.reset(); repaint(); v.ctl.apply(val(v.zeroAt)); } };
+      await until(() => { if (busy) return false; const at = zs.filter(v => Math.abs(v.ctl.get() - val(v.zeroAt)) <= v.ctl.step * 0.51);
+        if (Math.abs(o.metric()) <= o.eps && at.length === 1 && !found.has(at[0].id)) { const v = at[0], chip = ways.children[found.size]; found.add(v.id); busy = true; chip.className = 'ok'; tex(v.sym + ' = ' + fmt(val(v.zeroAt), v.ctl.dec), chip); focus(v.id); note('zero', { id: v.id });
+          fact('<b>' + o.resultName + ' = 0.</b> ' + v.zeroWhy); wait(found.size === zs.length ? 1.4 : 2.4).then(() => { o.reset(); repaint(); busy = false; }); }
+        return found.size === zs.length && !busy; });
+      await say(o.zeroDone || 'Those are all the ways. Each one has its own reason.', 0.4);
+    }
+    // 2. one term at a time, the others held still
+    plot.hidden = false; const ln = q('.ln'), dot = q('.dot'), xl = q('.ixl').children, sw = o.vars.filter(v => v.sweep);
+    for (let k = 0; k < sw.length; k++) { const v = sw[k]; let again = true;
+      while (again) { o.reset(); repaint(); focus(v.id); const a = val(v.sweep[0]), b = val(v.sweep[1]), lo = Math.min(a, b), hi = Math.max(a, b), at = (x) => { v.ctl.set(stepRound(v.ctl, x)); return o.metric(); }; let ym = 1e-9; for (let i = 0; i <= 24; i++) ym = Math.max(ym, at(a + (b - a) * i / 24)); at(a); repaint();
+        xl[0].textContent = fmt(lo, v.ctl.dec); xl[2].textContent = fmt(hi, v.ctl.dec); xl[1].innerHTML = o.resultName + ' <i>as you change the</i> ' + v.name; const pts = [];
+        await until((t) => { const f = Math.min(1, t / 3.8), x = a + (b - a) * f, y = at(x); v.ctl.paint(); const px = 30 + 266 * (x - lo) / (hi - lo || 1), py = 96 - 88 * Math.max(0, y) / ym; pts.push(px.toFixed(1) + ',' + py.toFixed(1)); ln.setAttribute('points', pts.join(' ')); dot.setAttribute('cx', px); dot.setAttribute('cy', py); return f >= 1; });
+        note('sweep', { id: v.id });
+        again = await new Promise(r => { foot.innerHTML = '<button class="pbtn sec">Again</button><button class="pbtn">' + (k === sw.length - 1 ? 'Done' : 'Next term') + '</button>'; o.auto = () => r(false); foot.children[0].onclick = () => r(true); foot.children[1].onclick = () => r(false); }); foot.innerHTML = ''; o.auto = () => { }; }
+    }
+    live = false; o.reset(); G.inter = null; dockIdle(); resolve();
+  });
+}
 // apply the settings that reach the present target (the scripted play-test uses this; a player never sees it)
 function solveRound() { const o = G.round; if (!o) return false; const sol = o.solution || {}; if (sol.ctl) (o.controls || []).forEach(c => { if (sol.ctl[c.id] != null && !c.locked) c.apply(sol.ctl[c.id]); }); if (sol.S != null) setChoke(sol.S); if (sol.entry) { o.fill(sol.entry[0], sol.entry[1]); o.check(); } if (sol.cant) o.cant(); return true; }
 function ask(o) {
@@ -278,7 +313,7 @@ async function level() {
   G.spec = dealWell(G.id); G.well = G.well0 = createWell(PH, G.spec); const o0 = G.well.operate(0); G.cur = { q: 0, ptf: o0.ptf, pwf: o0.pwf }; note('dealt', { kind: G.spec.kind });
   SC = createScene($('cv'), $('labels'), G); stage = SC.stage; stage.onUpdate((dt) => { tick(dt); paintState(); }); cam('high');
   ['state', 'cap', 'backBtn', 'toast'].forEach(id => SC.screenKeep.push(id === 'toast' ? () => $('toast').classList.contains('on') ? frameRect('toast')() : null : frameRect(id)));
-  const api = { G, PH, SC, say, sys, fact, me, wait, until, cam, useSet, target, ask, rule, tour, setChoke, reading, setWell, fmt, link, KPA, testDone, stamped, lawWatch, dockChokeOnly: (needs) => dockChoke(64, false, needs) };
+  const api = { G, PH, SC, say, sys, fact, me, wait, until, cam, useSet, target, ask, rule, interrogate, tour, setChoke, reading, setWell, fmt, link, KPA, testDone, stamped, lawWatch, dockChokeOnly: (needs) => dockChoke(64, false, needs) };
   const L = buildMissions(api);
   window.__game = { G, SC, stage, N, cam, showPart, backHome, link, setChoke, openNotebook, closeNotebook, renderNotebook, evalLaw, fitLaw, exportLog, solveRound, missions: L, fast: async (sec) => { for (let t = 0; t < sec; t += 0.25) { stage.advance(0.25); await new Promise(r => setTimeout(r, 0)); } } };
   $('cover').classList.add('off'); await until((t) => (SC.texturesPending() === 0 && t > 1.2) || t > 9); $('veil').classList.add('off'); setTimeout(() => { $('cover').hidden = true; }, 1700);
