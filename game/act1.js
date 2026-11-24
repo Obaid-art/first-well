@@ -2,7 +2,8 @@
    The story is one async function at the bottom of this file; everything above it is the machinery it speaks through:
    a clock, a chat thread, a dock (choke wheel, bet, job card, law tool) and the notebook. The well itself is game/sim.js.
    Nothing in the story decides a number: rates and pressures come from the model, readings from the instruments. */
-import { createScene } from './scene.js?v=5';
+import { createScene } from './scene.js?v=10';
+import { buildMissions } from './missions.js?v=1';
 import { link, initTerms, bore, boreText, TERMS, open as openTerm } from './terms.js?v=2';
 import { createWell, dealWell, intervalScore, KPA } from './sim.js?v=1';
 
@@ -18,7 +19,8 @@ const FILMS = [];                                                               
 const TURN = 2 * Math.PI / 16, PACE = 1 / 6;                                                        // game hours per real second: a day passes in about two and a half minutes                                                                     // one full turn of the wheel is 16/64 in
 
 const G = { name: '', id: '', spec: null, well: null, S: 0, cap: 0, locked: true, hours: 6, speed: 1, barrels: 0, stableFor: 0, logged: true, hideRate: false, gauge: false,
-  cur: null, log: [], bets: [], events: [], law: null, rep: 0, waiters: [], read: { show: 0, showTo: 0, S: 0, ptf: 0, kpa: 0, rate: 0, level: 0.3, gauge: false, turn: 0 }, pump: false };
+  cur: null, log: [], events: [], law: null, rules: [], done: {}, set: 'well', waiters: [],
+  bench: { rock: { A: 640, h: 50, phi: 0.2, Sw: 0.3, N: 0 }, cell: { p: 5000, Rsb: 600, pb: 0, gas: 0, oilRel: 1, gasRel: 0 }, core: { dp: 0, mu: 1, k: 200, L: 1, q: 0, fluid: 'water', plug: 1 } }, read: { show: 0, showTo: 0, S: 0, ptf: 0, kpa: 0, rate: 0, level: 0.3, gauge: false, turn: 0 }, pump: false };
 let SC = null, stage = null;
 
 // ---------- the clock and the well ----------
@@ -64,7 +66,7 @@ const dock = () => $('dock');
 function dockIdle(text) { dock().innerHTML = '<div class="idle">' + (text || '') + '</div>'; }
 let wheelUI = null, need = null;
 function paintChoke() { if (!wheelUI || !wheelUI.querySelector('.wheel g')) return; wheelUI.querySelector('.wheel g').setAttribute('transform', 'rotate(' + (G.S * 22.5) + ' 56 56)'); wheelUI.querySelector('.rd b').innerHTML = G.S > 0 ? G.S + '<i>/64 in</i>' : 'Shut in'; wheelUI.querySelector('.bore').innerHTML = bore(G.S, 92); wheelUI.querySelector('.bt').textContent = G.S > 0 ? boreText(G.S).split(' = ').slice(1).join(' = ') : 'no hole: the well is closed';
-  const [dn, up] = wheelUI.querySelectorAll('.steps button'); dn.disabled = G.locked || G.S <= 0; up.disabled = G.locked || G.S >= G.cap; wheelUI.querySelector('.wheel').classList.toggle('locked', G.locked); wheelUI.querySelector('.rd span').textContent = G.locked ? 'The supervisor has the wheel.' : G.cap < 64 ? 'Up to ' + G.cap + '/64 for now. Drag the wheel.' : 'The dashed ring is one inch: 64/64.';
+  const [dn, up] = wheelUI.querySelectorAll('.steps button'); dn.disabled = G.locked || G.S <= 0; up.disabled = G.locked || G.S >= G.cap; wheelUI.querySelector('.wheel').classList.toggle('locked', G.locked); wheelUI.querySelector('.rd span').textContent = G.locked ? 'The supervisor has the wheel.' : G.cap <= 0 ? 'Leave it shut in for this one.' : G.cap < 64 ? 'Up to ' + G.cap + '/64 for now. Drag the wheel.' : 'The dashed ring is one inch: 64/64.';
   const st = wheelUI.querySelector('.st'); st.textContent = G.log.length === 0 && G.S === 0 ? '' : G.logged ? 'Steady. Reading taken.' : 'Settling…'; st.hidden = !st.textContent; st.classList.toggle('ok', G.logged); }
 function paintNeed() { if (!need || !wheelUI || !wheelUI.querySelector('.need')) return; const flow = G.log.filter(r => r.S > 0 && r.kpa != null).length, shut = G.log.some(r => r.S === 0 && r.kpa != null); [...wheelUI.querySelectorAll('.need span:not(.st)')].forEach(n => n.remove()); wheelUI.querySelector('.need').insertAdjacentHTML('beforeend', '<span class="' + (flow >= need.flow ? 'ok' : '') + '">flowing readings ' + Math.min(flow, need.flow) + ' of ' + need.flow + '</span><span class="' + (shut ? 'ok' : '') + '">shut-in reading ' + (shut ? 'taken' : 'wanted') + '</span>'); }
 function dockChoke(cap, locked, needs) {
@@ -81,21 +83,7 @@ function dockChoke(cap, locked, needs) {
   dn.addEventListener('click', () => setChoke(Math.max(0, G.S - 2))); up.addEventListener('click', () => setChoke(Math.min(G.cap, G.S + 2)));
   paintChoke(); paintNeed();
 }
-// a forecast, always a range, committed before the answer exists
-function dockBet(o) {
-  return new Promise(resolve => {
-    const max = o.max || 4000, step = 10; dock().innerHTML = '<h4>Your call</h4>' + (o.tool && G.law ? '<div class="tool" id="tool"></div>' : '') + '<div class="bet"><p class="say"></p><div class="dual"><div class="track"></div><div class="fill"></div><input type="range" aria-label="Lowest"><input type="range" aria-label="Highest"></div><div class="scale"><span>0</span><span>' + fmt(max / 2) + '</span><span>' + fmt(max) + ' bbl/d</span></div><button class="pbtn">Lock it in</button></div>';
-    const [lo, hi] = dock().querySelectorAll('.dual input'), fill = dock().querySelector('.fill'), sayEl = dock().querySelector('.say');
-    [lo, hi].forEach(i => { i.min = 0; i.max = max; i.step = step; }); lo.value = 0; hi.value = max;
-    const show = (who) => { let a = +lo.value, b = +hi.value; if (a > b - step) { if (who === lo) { a = b - step; lo.value = a; } else { b = a + step; hi.value = b; } } fill.style.left = (100 * a / max) + '%'; fill.style.width = (100 * (b - a) / max) + '%'; sayEl.innerHTML = 'Between ' + fmt(a) + ' and ' + fmt(b) + ' <i>bbl/d</i>'; };
-    lo.addEventListener('input', () => show(lo)); hi.addEventListener('input', () => show(hi)); show();
-    if (o.tool && G.law) lawTool($('tool'));
-    dock().querySelector('.pbtn').addEventListener('click', () => { const b = { lo: +lo.value, hi: +hi.value }; me('Between ' + fmt(b.lo) + ' and ' + fmt(b.hi) + ' barrels a day.'); dockIdle(); resolve(b); });
-  });
-}
-function dockJob(o) { return new Promise(resolve => { dock().innerHTML = '<h4>A job you can order</h4><div class="job"><b>' + o.title + '</b><p>' + link(o.text) + '</p><div class="cost"><span>$' + fmt(o.cost) + '</span><span>' + o.days + ' days</span></div></div><button class="pbtn">' + o.button + '</button>'; dock().querySelector('.pbtn').addEventListener('click', () => { dockIdle(); resolve(); }); }); }
 function dockButton(label) { return new Promise(resolve => { dock().innerHTML = '<button class="pbtn">' + label + '</button>'; dock().querySelector('.pbtn').addEventListener('click', () => { dockIdle(); resolve(); }); }); }
-function settleBet(key, asked, b, actual) { const score = intervalScore(b.lo, b.hi, actual), hit = actual >= b.lo && actual <= b.hi; G.bets.push({ key, asked, lo: b.lo, hi: b.hi, actual, hit, score: Math.round(score), day: day() }); G.rep -= score / Math.max(1, actual); note('bet', { key, lo: b.lo, hi: b.hi, actual, hit }); return hit; }
 
 // ---------- laws: what the player may write, and what a written law then computes ----------
 const VARS = {
@@ -149,9 +137,10 @@ function renderNotebook() {
   const L = nb.querySelector('.l'), Rr = nb.querySelector('.r'), rows = G.log.slice().sort((a, b) => a.S - b.S);
   el('h3', null, 'Test log', L);
   el('table', null, '<tr><th>Choke<small>64ths of an inch</small></th><th>Wellhead<small>psi</small></th><th>Bottomhole<small>kPa</small></th><th>Rate<small>bbl/d</small></th></tr>' + rows.map(r => '<tr><td>' + (r.S > 0 ? r.S + '/64' : 'shut in') + '</td><td>' + fmt(r.ptf) + '</td><td class="' + (r.kpa == null ? 'na' : '') + '">' + (r.kpa == null ? 'no gauge' : fmt(r.kpa)) + '</td><td>' + (r.wait ? 'settling' : fmt(r.rate)) + '</td></tr>').join(''), L);
+  if (G.rules.length) { el('h3', 'gap', 'Rules you have found', L); G.rules.forEach(r => { const d = el('div', 'rulecard', '<b>' + r.name + '</b><div class="k"></div><small>' + r.ref + '</small>', L); if (r.tex) tex(r.tex, d.querySelector('.k')); }); }
   if (G.gauge) el('div', 'card2', link('The service company’s gauge reads in kilopascals. Everything else on this location reads in psi.') + ' <b>1 psi = 6.895 kPa.</b>', L);
   el('h3', null, 'Page 1', Rr);
-  if (!testDone()) { el('p', 'locked', 'Nothing to write yet. A page opens when there is a test to read: four flowing settings and one shut-in, with the gauge on bottom.', Rr); return; }
+  if (!testDone()) { el('p', 'locked', 'Nothing to write here yet. This page opens when the well has been tested: four flowing settings and one shut-in, with the gauge on bottom.', Rr); return; }
   el('p', 'q', link('Something in the log sets the rate. Which reading does the rate follow?'), Rr);
   const px = el('div', 'pick', null, Rr); Object.keys(VARS).forEach(k => { const b = el('button', N.x === k ? 'on' : '', VARS[k].name, px); b.addEventListener('click', () => { N.x = k; N.form = null; N.unit = null; renderNotebook(); }); });
   if (!N.x) return; const v = VARS[N.x], plot = el('div', 'plot', null, Rr), fit = N.form ? fitLaw(N.x, N.form) : null, pts = points(N.x), xs = pts.map(p => p.x);
@@ -172,32 +161,27 @@ function renderNotebook() {
   if (same && stamped(G.law)) { const st = el('div', 'stamp', '<b>This law has a name: the productivity index.</b><span>Petroleum Production Systems, 2nd edition, Section 1-3, Equation 1-6. The constant is written J, and what it multiplies is the drawdown.</span><div class="k"></div><span>J = ' + sig(G.law.c) + ' bbl/d per kPa = ' + sig(G.law.c) + ' × 6.895 = <b style="display:inline;font-size:inherit">' + sig(G.law.c * KPA) + ' bbl/d per psi</b></span>', Rr); tex('q = J\\,(\\bar p - p_{wf})', st.querySelector('.k')); }
 }
 
-// ---------- the cover: who is playing, and at the end what happened ----------
+// ---------- the cover, and the card at the end of the level ----------
 function cover() {
   return new Promise(resolve => {
-    const c = $('coverIn'); c.innerHTML = '<div class="k">WellSpring · Chapter 1</div><h1>First Well</h1><p>Your first day as a production engineer. You are given one oil well. Open it and see what it does.</p><label for="pn">Your name</label><input id="pn" autocomplete="off" placeholder="optional"><label for="pid">Student number</label><input id="pid" autocomplete="off" inputmode="numeric" placeholder="optional"><button class="go">Start</button><small>About ten minutes. Best on a laptop. This is a demo: any name and number will do, or none.</small>';
-    const n = $('pn'), i = $('pid'); 
-    const go = c.querySelector('.go'); go.addEventListener('click', () => { G.name = n.value.trim() || 'Guest'; G.id = i.value.trim() || String(100000 + Math.floor(Math.random() * 900000)); resolve(); });
+    const c = $('coverIn'); c.innerHTML = '<div class="k">Petroleum production · Chapter 1</div><h1>First Well</h1><p>Your first day as a production engineer. Eight short missions, one for each idea in the chapter. Each asks you for a number. You work the equipment until you have it.</p><label for="pn">Your name</label><input id="pn" autocomplete="off" placeholder="optional"><label for="pid">Student number</label><input id="pid" autocomplete="off" inputmode="numeric" placeholder="optional"><button class="go">Start</button><small>About forty minutes for all eight. Best on a laptop. This is a demo: any name and number will do, or none.</small>';
+    const n = $('pn'), i = $('pid'); try { const p = JSON.parse(localStorage.getItem('fw1') || '{}'); if (p.name && p.name !== 'Guest') n.value = p.name; if (p.id) i.value = p.id; } catch (e) { }
+    c.querySelector('.go').addEventListener('click', () => { G.name = n.value.trim() || 'Guest'; G.id = i.value.trim() || String(100000 + Math.floor(Math.random() * 900000)); resolve(); });
   });
 }
 function endCard() {
-  const c = $('coverIn'), L = G.law, v = L ? VARS[L.x] : null;
-  c.innerHTML = '<div class="k">Act 1 · Open it up</div><h1>Day ' + day() + '</h1><p>' + fmt(G.barrels) + ' barrels to the tank. Here is what you said the well would do, and what it did.</p><table><tr><th>Asked</th><th>Your range, bbl/d</th><th>The well</th></tr>' +
-    G.bets.map(b => '<tr><td>' + b.asked + '</td><td>' + fmt(b.lo) + ' to ' + fmt(b.hi) + '</td><td>' + fmt(b.actual) + '</td></tr>').join('') + '</table><label>The law you signed</label><div id="endLaw" style="font-size:19px;margin:4px 0 20px"></div><div class="two"><button class="go" id="dl">Download my log</button><button class="go sec" id="again">Play again</button></div><small>Act 2, Something is wrong, is not built yet.</small>';
-  if (L) { $('endLaw').innerHTML = '<span></span> <small style="display:inline;margin-left:10px">c in ' + unitText(L.unit, v) + '</small>'; tex(formTex(L.form, v.sym, sig(L.c)), $('endLaw').querySelector('span')); } else $('endLaw').textContent = 'none';
-  $('dl').addEventListener('click', () => { const blob = new Blob([JSON.stringify(exportLog(), null, 1)], { type: 'application/json' }), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'first-well-act1-' + G.id.replace(/[^a-z0-9]/gi, '') + '.json'; a.click(); });
-  $('again').addEventListener('click', () => location.reload());
-  const cv = $('cover'); cv.hidden = false; requestAnimationFrame(() => cv.classList.remove('off')); setTimeout(() => cv.classList.remove('off'), 60);
+  return new Promise(resolve => {
+    const c = $('coverIn'); c.innerHTML = '<div class="k">Chapter 1 · complete</div><h1>Eight of eight</h1><p>These are the rules you found. They are in your notebook.</p><div id="endRules"></div><div class="two"><button class="go" id="dl">Download my log</button><button class="go sec" id="again">Back to the missions</button></div><small>Chapter 2 is not built yet.</small>';
+    G.rules.forEach(r => { const d = el('div', 'endrule', '<b>' + r.name + '</b><span class="eq"></span>', $('endRules')); if (r.tex) tex(r.tex, d.querySelector('.eq')); });
+    $('dl').addEventListener('click', () => { const blob = new Blob([JSON.stringify(exportLog(), null, 1)], { type: 'application/json' }), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'first-well-chapter1-' + G.id.replace(/[^a-z0-9]/gi, '') + '.json'; a.click(); });
+    const cv = $('cover'); $('again').addEventListener('click', () => { cv.classList.add('off'); setTimeout(() => { cv.hidden = true; }, 1700); resolve(); });
+    cv.hidden = false; requestAnimationFrame(() => cv.classList.remove('off')); setTimeout(() => cv.classList.remove('off'), 60);
+  });
 }
-const exportLog = () => ({ game: 'First Well', act: 1, version: 1, player: { name: G.name, number: G.id }, well: { kind: G.spec.kind, seed: G.spec.seed }, days: day(), barrels: Math.round(G.barrels), readings: G.log, bets: G.bets, law: G.law && { variable: G.law.x, form: G.law.form, unit: unitText(G.law.unit, VARS[G.law.x]), c: G.law.c, miss: G.law.miss, productivityIndex: stamped(G.law) }, reputation: +G.rep.toFixed(4), events: G.events });
-// a slot for a short film: a name listed in FILMS plays game/media/<name>.mp4 here, with a way to skip it
-async function cutscene(name) {
-  if (!FILMS.includes(name)) return; const c = $('coverIn'); c.innerHTML = '<video src="game/media/' + name + '.mp4" style="width:100%;border-radius:14px" autoplay playsinline></video><button class="go sec" style="margin-top:12px">Skip</button>';
-  await new Promise(res => { c.querySelector('video').addEventListener('ended', res); c.querySelector('video').addEventListener('error', res); c.querySelector('button').addEventListener('click', res); }); c.innerHTML = '';
-}
+const exportLog = () => ({ game: 'First Well', chapter: 1, version: 2, player: { name: G.name, number: G.id }, well: { kind: G.spec.kind, seed: G.spec.seed }, missionsDone: Object.keys(G.done), rules: G.rules.map(r => r.name), readings: G.log, law: G.law && { variable: G.law.x, form: G.law.form, unit: unitText(G.law.unit, VARS[G.law.x]), c: G.law.c, miss: G.law.miss, productivityIndex: stamped(G.law) }, events: G.events });
 
 // ---------- the well explains itself: its state in words, any part on request, and a tour before the first move ----------
-function paintState() { const st = $('state'), flowing = G.S > 0, key = flowing ? 'flow' : 'shut'; if (st._k === key) return; st._k = key; st.className = 'state ' + key; st.innerHTML = link(flowing ? 'flowing' : 'shut in') + '<small>' + (flowing ? 'the choke is open: oil is moving' : 'closed at the surface: nothing moves') + '</small>'; }
+function paintState() { const st = $('state'), flowing = G.S > 0, key = G.set !== 'well' ? 'none' : flowing ? 'flow' : 'shut'; if (st._k === key) return; if (key === 'none') { st._k = key; st.innerHTML = ''; return; } st._k = key; st.className = 'state ' + key; st.innerHTML = link(flowing ? 'flowing' : 'shut in') + '<small>' + (flowing ? 'the choke is open: oil is moving' : 'closed at the surface: nothing moves') + '</small>'; }
 function showPart(key, name) { if (!SC || !SC.anchors[key]) return; if (N.open) closeNotebook(); cam(key, 2.4, true); SC.point(key, name || SC.anchors[key].name); $('backBtn').hidden = false; note('show', { part: key }); }
 function backHome() { SC.unpoint(); $('backBtn').hidden = true; cam(G.home || 'play', 2.4); }
 const frameRect = (id) => () => { const n = $(id); if (!n || n.hidden || n.offsetWidth === 0) return null; const a = n.getBoundingClientRect(), f = $('labels').getBoundingClientRect(); return { x0: a.left - f.left - 6, y0: a.top - f.top - 6, x1: a.right - f.left + 6, y1: a.bottom - f.top + 6 }; };
@@ -215,10 +199,10 @@ const TOUR = [
 ];
 function tour() {
   return new Promise(resolve => {
-    const cap = $('cap'); let i = 0; cap.hidden = false; note('tour', { start: true });
+    const cap = $('cap'); let i = 0; cap.hidden = false; G.read.showTo = 0; note('tour', { start: true });
     const go = (k) => { i = clamp(k, 0, TOUR.length - 1); const st = TOUR[i]; cap.querySelector('.ct').innerHTML = link(st.text); cap.querySelector('.cn').textContent = (i + 1) + ' of ' + TOUR.length; cap.querySelector('.back').disabled = i === 0; cap.querySelector('.next').textContent = i === TOUR.length - 1 ? 'Start' : 'Next';
       if (st.key) { cam(st.key, 2.6, true); SC.point(st.key); } else { SC.unpoint(); cam(st.cam, 2.6, true); } };
-    const end = (skipped) => { cap.hidden = true; SC.unpoint(); note('tour', { finished: !skipped, step: i + 1 }); cap.querySelector('.next').onclick = cap.querySelector('.back').onclick = cap.querySelector('.skip').onclick = null; resolve(); };
+    const end = (skipped) => { cap.hidden = true; SC.unpoint(); G.read.showTo = 1; cam('play', 2.4); note('tour', { finished: !skipped, step: i + 1 }); cap.querySelector('.next').onclick = cap.querySelector('.back').onclick = cap.querySelector('.skip').onclick = null; resolve(); };
     cap.querySelector('.next').onclick = () => { if (i === TOUR.length - 1) end(false); else go(i + 1); }; cap.querySelector('.back').onclick = () => go(i - 1); cap.querySelector('.skip').onclick = () => end(true); go(0);
   });
 }
@@ -228,67 +212,89 @@ function openWords() {
   const box = nb.querySelector('.words'); Object.keys(TERMS).sort((a, b) => TERMS[a].t.localeCompare(TERMS[b].t)).forEach(k => { const t = TERMS[k], d = el('div', 'w', '<b>' + t.t + '</b><p>' + t.d + '</p>' + (t.part ? '<button class="pbtn sec">Show me on the well</button>' : ''), box); const b = d.querySelector('button'); if (b) b.addEventListener('click', () => showPart(t.part, t.t)); });
 }
 
-// ---------- Act 1 ----------
-async function story() {
+// ---------- the target: one known number, reached with the player's own hands ----------
+const stepRound = (c, v) => { const n = Math.round((clamp(v, c.min, c.max) - c.min) / c.step); return +(c.min + n * c.step).toFixed(6); };
+function control(c, box) {
+  const d = el('div', 'ctl ' + c.kind + (c.locked ? ' locked' : ''), null, box);
+  if (c.kind === 'slider') {
+    d.innerHTML = '<div class="top"><label>' + link(c.label) + '</label><output></output></div><input type="range">'; const inp = d.querySelector('input'), out = d.querySelector('output'); inp.min = c.min; inp.max = c.max; inp.step = c.step; inp.disabled = !!c.locked;
+    c.paint = () => { const v = c.get(); inp.value = v; out.innerHTML = fmt(v, c.dec) + (c.unit ? ' <i>' + c.unit + '</i>' : '') + (c.locked ? ' <em>fixed</em>' : ''); inp.style.setProperty('--p', (100 * (v - c.min) / (c.max - c.min)).toFixed(1) + '%'); };
+    c.apply = (v) => { c.set(stepRound(c, v)); c.paint(); note('ctl', { id: c.id, v: c.get() }); }; inp.addEventListener('input', () => c.apply(+inp.value));
+  } else {
+    d.innerHTML = '<div class="top"><label>' + link(c.label) + '</label>' + (c.locked ? '<em>fixed</em>' : '') + '</div><div class="chs"></div>'; const row = d.querySelector('.chs');
+    c.options.forEach(([lab, val]) => { const b = el('button', null, lab, row); b.disabled = !!c.locked; b._v = val; b.addEventListener('click', () => c.apply(val)); });
+    c.paint = () => { [...row.children].forEach(b => b.classList.toggle('on', b._v === c.get())); }; c.apply = (v) => { c.set(v); c.paint(); note('ctl', { id: c.id, v }); };
+  }
+  c.paint(); return c;
+}
+function target(o) {
+  return new Promise(resolve => {
+    const e0 = G.events.length; let held = 0, last = 0, done = false; G.round = o; note('ask', { title: o.title, goal: +(+o.goal).toFixed(4) });
+    if (o.wheel) dockChoke(o.wheel.cap, false); else { dock().innerHTML = ''; wheelUI = null; }
+    dock().insertAdjacentHTML('afterbegin', '<div class="tg"><h4>' + link(o.title) + '</h4><div class="tgrow"><div class="now"><b></b><span>now</span></div><div class="bar"><i class="band"></i><i class="pin"></i></div><div class="want"><b>' + o.goalText + '</b><span>wanted</span></div></div>' + (o.constraint ? '<p class="con"></p>' : '') + '</div>');
+    const tg = dock().querySelector('.tg'), now = tg.querySelector('.now b'), pin = tg.querySelector('.pin'), band = tg.querySelector('.band'), con = tg.querySelector('.con'), [lo, hi] = o.range, pos = (v) => clamp((v - lo) / (hi - lo), 0, 1) * 100;
+    if (o.entry) { tg.querySelector('.tgrow').hidden = true; } else { band.style.left = pos(o.goal - o.tol) + '%'; band.style.width = Math.max(1.2, pos(o.goal + o.tol) - pos(o.goal - o.tol)) + '%'; }
+    const box = el('div', 'ctls', null, dock()); (o.controls || []).forEach(c => control(c, box));
+    const finish = (res) => { if (done) return; done = true; G.round = null; note('reached', Object.assign({ title: o.title, moves: G.events.slice(e0).filter(x => x.type === 'ctl' || x.type === 'choke').length }, res || {})); dockIdle(); resolve(res || {}); };
+    if (o.entry) { const en = el('div', 'entry', '<input type="number" inputmode="decimal" placeholder="your number"><select>' + o.entry.units.map(u => '<option>' + u[0] + '</option>').join('') + '</select><button class="pbtn" style="width:auto">Check</button>', dock()); const inp = en.querySelector('input'), sel = en.querySelector('select');
+      o.check = () => { if (inp.value === '') return; const v = +inp.value * o.entry.units.find(u => u[0] === sel.value)[1]; note('answer', { v: +inp.value, unit: sel.value }); me(fmt(+inp.value) + ' ' + sel.value + '.'); if (Math.abs(v - o.goal) <= o.tol) finish({ entry: +inp.value }); else say(v < o.goal ? o.entry.low : o.entry.high, 0.2); };
+      en.querySelector('button').addEventListener('click', o.check); o.fill = (v, u) => { inp.value = v; sel.value = u; }; }
+    if (!o.entry) { const cant = el('button', 'cant', 'It cannot be done', dock()); cant.addEventListener('click', () => { note('cant', { right: !!o.impossible }); if (o.impossible) { me('It cannot be done.'); finish({ cant: true }); } else say('It can. Keep going.', 0.2); }); o.cant = () => cant.click(); }
+    const paint = () => { if (o.entry) return false; const v = o.metric(), cOk = !o.constraint || o.constraint.ok(), ok = Math.abs(v - o.goal) <= o.tol && (!o.steady || o.steady()) && cOk; now.innerHTML = o.show(v); pin.style.left = pos(v) + '%'; tg.classList.toggle('ok', ok); if (con) { con.innerHTML = (cOk ? '✓ ' : '✗ ') + link(o.constraint.text); con.classList.toggle('bad', !cOk); } return ok; };
+    G.waiters.push({ t: 0, test: (t) => { if (done) return true; const ok = paint(); held = ok ? held + (t - last) : 0; last = t; if (ok && held >= 0.9 && !o.impossible) { finish(); return true; } return false; }, resolve: () => { } });
+  });
+}
+// apply the settings that reach the present target (the scripted play-test uses this; a player never sees it)
+function solveRound() { const o = G.round; if (!o) return false; const sol = o.solution || {}; if (sol.ctl) (o.controls || []).forEach(c => { if (sol.ctl[c.id] != null && !c.locked) c.apply(sol.ctl[c.id]); }); if (sol.S != null) setChoke(sol.S); if (sol.entry) { o.fill(sol.entry[0], sol.entry[1]); o.check(); } if (sol.cant) o.cant(); return true; }
+function ask(o) {
+  return new Promise(resolve => {
+    dock().innerHTML = '<h4>What did you find?</h4><p class="askq">' + link(o.q) + '</p><div class="asks"></div>'; G.asking = o; const row = dock().querySelector('.asks');
+    o.options.forEach((t, i) => { const b = el('button', null, t, row); b.addEventListener('click', async () => { note('said', { q: o.q, pick: i, right: i === o.right }); if (i !== o.right) { b.classList.add('no'); b.disabled = true; say('Not that. Think about what you actually changed.', 0.2); return; } G.asking = null; me(t); dockIdle(); await say(o.why); resolve(); }); });
+    o.pick = () => row.children[o.right].click();
+  });
+}
+async function rule(o) { G.rules = G.rules.filter(r => r.name !== o.name); G.rules.push(o); note('rule', { name: o.name }); const m = bubble('fact rulemsg', '<small>The rule · ' + o.ref + '</small><b>' + o.name + '</b><div class="k"></div><p>' + link(o.text) + '</p>'); if (o.tex) tex(o.tex, m.querySelector('.k'), true); thread().scrollTop = thread().scrollHeight; $('nbBtn').classList.add('new'); await wait(2.2); }
+function useSet(name, camKey, dur) { G.set = name; SC.useSet(name); G.read.showTo = 1; $('backBtn').hidden = true; SC.unpoint(); cam(camKey || name, dur); document.querySelector('.hud').style.visibility = name === 'well' ? 'visible' : 'hidden'; }
+// a different well (other rock, other pipe) starts a clean test log: readings from two wells never share a page
+function setWell(mod) { if (!mod && G.well === G.well0) return; G.well = mod ? createWell(PH, Object.assign({}, G.spec, mod)) : G.well0; G.logged = false; G.stableFor = 0; G.log = []; G.law = null; N.x = N.form = N.unit = null; }
+// the law page: wait until the signed law is the one the readings support, with a nudge after each one that is not
+async function lawWatch() { $('nbBtn').classList.add('new'); let seen = null; await until(() => { if (G.law && G.law !== seen && !N.open) { seen = G.law; if (!stamped(G.law)) say(G.law.x !== 'kpa' ? 'Try your law on the next reading before you trust it. Does another column fit better?' : G.law.unit !== 'r/u' ? 'The shape is right. Look again at the unit of your constant, and at the unit the gauge reads in.' : 'Close. Try another shape on the same column.', 0.2); } return !!G.law && stamped(G.law) && !N.open; }); await say('Signed, and it holds. That constant is worth remembering.'); }
+// the list of missions: the next one is offered; finished ones can be played again
+function hub(list) {
+  return new Promise(resolve => {
+    const next = list.findIndex(m => !G.done[m.id]); document.querySelector('.gtop .brand small').textContent = 'Chapter 1 · ' + Object.keys(G.done).length + ' of ' + list.length + ' missions';
+    dock().innerHTML = '<h4>Missions</h4><div class="hub"></div>'; const box = dock().querySelector('.hub');
+    list.forEach((m, i) => { const st = G.done[m.id] ? 'done' : i === next ? 'next' : 'later', b = el('button', st, '<i>' + (G.done[m.id] ? '✓' : i + 1) + '</i><span><b>' + m.title + '</b><small>' + m.ref + '</small></span>', box); b.disabled = st === 'later'; b.addEventListener('click', () => { dockIdle(); resolve(i); }); });
+    const nx = box.querySelector('.next'); if (nx) nx.scrollIntoView({ block: 'nearest' });
+  });
+}
+const save = () => { try { localStorage.setItem('fw1', JSON.stringify({ name: G.name, id: G.id, done: G.done })); } catch (e) { } };
+
+// ---------- Chapter 1 ----------
+async function level() {
   $('av').textContent = WHO.initials; $('whoName').textContent = WHO.name; $('whoRole').textContent = WHO.role + ' · Well 7'; dockIdle();
   await cover();
-  G.spec = dealWell(G.id); G.well = createWell(PH, G.spec); const o0 = G.well.operate(0); G.cur = { q: 0, ptf: o0.ptf, pwf: o0.pwf }; note('dealt', { kind: G.spec.kind });
+  try { const p = JSON.parse(localStorage.getItem('fw1') || '{}'); if (p.id === G.id && p.done) G.done = p.done; } catch (e) { }
+  G.spec = dealWell(G.id); G.well = G.well0 = createWell(PH, G.spec); const o0 = G.well.operate(0); G.cur = { q: 0, ptf: o0.ptf, pwf: o0.pwf }; note('dealt', { kind: G.spec.kind });
   SC = createScene($('cv'), $('labels'), G); stage = SC.stage; stage.onUpdate((dt) => { tick(dt); paintState(); }); cam('high');
   ['state', 'cap', 'backBtn', 'toast'].forEach(id => SC.screenKeep.push(id === 'toast' ? () => $('toast').classList.contains('on') ? frameRect('toast')() : null : frameRect(id)));
-  window.__game = { G, SC, stage, N, cam, showPart, backHome, link, setChoke, openNotebook, closeNotebook, renderNotebook, evalLaw, fitLaw, exportLog, fast: async (sec) => { for (let t = 0; t < sec; t += 0.25) { stage.advance(0.25); await new Promise(r => setTimeout(r, 0)); } } };
-  await cutscene('act1_intro');
+  const api = { G, PH, SC, say, sys, fact, me, wait, until, cam, useSet, target, ask, rule, tour, setChoke, reading, setWell, fmt, link, KPA, testDone, stamped, lawWatch, dockChokeOnly: (needs) => dockChoke(64, false, needs) };
+  const L = buildMissions(api);
+  window.__game = { G, SC, stage, N, cam, showPart, backHome, link, setChoke, openNotebook, closeNotebook, renderNotebook, evalLaw, fitLaw, exportLog, solveRound, missions: L, fast: async (sec) => { for (let t = 0; t < sec; t += 0.25) { stage.advance(0.25); await new Promise(r => setTimeout(r, 0)); } } };
   $('cover').classList.add('off'); await until((t) => (SC.texturesPending() === 0 && t > 1.2) || t > 9); $('veil').classList.add('off'); setTimeout(() => { $('cover').hidden = true; }, 1700);
-
-  cam('play', 6); await wait(2.2); await tour();
-  sys('Day 1 · 06:00'); cam('surface', 5); await wait(1.6);
-  await say((G.name === 'Guest' ? 'Good morning' : 'Good morning, ' + G.name.split(' ')[0]) + '. I’m ' + WHO.name + ', the field supervisor.');
-  await say('Well 7 is yours from today. It was drilled last month. It has never flowed.');
-  await say('It is shut in. The oil is ' + fmt(G.spec.depth) + ' feet below that wellhead.');
-  G.read.showTo = 1;
-  await say('Open the choke. Carefully: no more than 16 for now. That is a quarter of an inch.', 0.6);
-  cam('choke', 4); dockChoke(16); await until(() => G.log.some(r => r.S >= 6));
-  cam('play', 7); await say('Oil to the tank. Good.');
-  await say('Before you open it further: what will it make at 32? Give me a range.', 0.3);
-  G.locked = true; paintChoke(); const b1 = await dockBet({ max: 4000 });
-  dockChoke(64, true); setChoke(32); await settledAt(32); await wait(0.8);
-  const r32 = reading(32).rate; settleBet('blind', 'Choke 32/64, before any measurement', b1, r32);
-  fact('Choke 32/64: <b>' + fmt(r32) + ' bbl/d</b>. Your range was ' + fmt(b1.lo) + ' to ' + fmt(b1.hi) + '.'); await wait(1.2);
-  await say('Noted.'); await say('It’s your well. See what it can do.', 0.5);
-  dockChoke(64);
-  const top = () => { const hi = G.log.filter(r => r.S >= 40).sort((a, b) => a.S - b.S); return hi.length >= 2 && Math.abs(hi[hi.length - 1].rate - hi[hi.length - 2].rate) < 0.03 * hi[hi.length - 1].rate; };
-  let hinted = false; await until((t) => { if (!hinted && t > 75 && !top()) { hinted = true; say('Open it all the way. Then back it off a little. I want to see the top.'); } return top(); });
-  await say('It has stopped answering the wheel.'); await say('Why?', 1.6);
-  await say('You can’t tell from up here. Nobody can. All you have is one gauge at the top of an ' + fmt(G.spec.depth) + '-foot pipe.');
-  await dockJob({ title: 'Downhole pressure gauge', text: 'A wireline crew lowers a gauge to the bottom of the well and leaves it there. You will see the pressure where the oil enters the well.', cost: ECON.gauge, days: ECON.gaugeDays, button: 'Order it' });
-  me('Order the gauge.'); note('job', { job: 'downhole gauge', cost: ECON.gauge }); G.locked = true; dockChoke(64, true);
-  const back = G.hours + ECON.gaugeDays * 24; G.speed = 48; SC.wireline(true); cam('surface', 5); toast('Wireline crew on location. Two days pass.', 6); await until(() => G.hours >= back); G.speed = 1; SC.wireline(false); cam('deep', 5);
-  G.gauge = true; G.logged = false; G.stableFor = 0; sys('Day ' + day() + ' · gauge on bottom'); await wait(1.4);
-  await say('Gauge is on bottom. The service company reports in kilopascals. Their gauge, their units.');
-  await say('Run me a test: four choke settings, and shut it in once. I want the static pressure.', 0.5);
-  cam('play', 6); dockChoke(64, false, { flow: 4, shut: 1 }); $('nbBtn').disabled = false;
-  await until(testDone);
-  await say('That is a test. It’s in your notebook.');
-  await say('Something in those numbers sets the rate. Find it, write it down and sign it.', 0.4);
-  $('nbBtn').classList.add('new'); await until(() => !!G.law);
-  await until(() => !N.open); await wait(0.6);
-  await say('Signed. Let’s see what it is worth.');
-  const Sx = [20, 28, 12, 36, 44, 24, 30, 18].find(s => !G.log.some(r => r.S === s)) || 26;
-  await say('I’m putting the well on ' + Sx + '.', 0.4);
-  G.hideRate = true; dockChoke(64, true); setChoke(Sx); await settledAt(Sx); await wait(0.6); const rx = reading(Sx);
-  fact('Choke ' + Sx + '/64. Downhole gauge: <b>' + fmt(rx.kpa) + ' kPa</b>. Wellhead: <b>' + fmt(rx.ptf) + ' psi</b>. The test separator needs an hour to settle.'); await wait(1.0);
-  await say('What will it read? Give me a range.', 0.3);
-  const b2 = await dockBet({ max: 4000, tool: true });
-  const hit = settleBet('law', 'Choke ' + Sx + '/64, with your law', b2, rx.rate); await wait(1.4); G.hideRate = false; G.log.forEach(r => { delete r.wait; }); dockChoke(64, true);
-  fact('Test separator: <b>' + fmt(rx.rate) + ' bbl/d</b>. Your range was ' + fmt(b2.lo) + ' to ' + fmt(b2.hi) + '.'); await wait(1.4);
-  const width = (b2.hi - b2.lo) / Math.max(1, rx.rate);
-  await say(hit && width <= 0.12 ? 'Inside, and tight. That is how it is done.' : hit ? 'Inside. A range that wide is safe, and not much use to me.' : 'Outside your range. Find out why before tomorrow.');
-  await say('One more thing. Well 6, next lease, same sand, makes ' + fmt(Math.round(3 * G.well.operate(64).q / 50) * 50) + ' barrels a day.');
-  await say('Three times yours. Find out why.', 1.2);
-  sys('End of Act 1'); await dockButton('Finish'); note('end'); endCard();
+  $('nbBtn').disabled = false; cam('play', 5); await wait(1.5);
+  if (!Object.keys(G.done).length) { await say((G.name === 'Guest' ? 'Good morning' : 'Good morning, ' + G.name.split(' ')[0]) + '. I’m ' + WHO.name + ', the field supervisor.'); await say('Well 7 is yours from today. First you learn what you are looking at.'); }
+  else await say('Welcome back. Pick up where you left off.');
+  for (;;) {
+    const i = await hub(L), m = L[i]; document.querySelector('.gtop .brand small').textContent = 'Chapter 1 · mission ' + (i + 1) + ' of ' + L.length; sys('Mission ' + (i + 1) + ' · ' + m.title); note('mission', { id: m.id, start: true });
+    await m.run(); const first = !G.done[m.id]; G.done[m.id] = true; save(); note('mission', { id: m.id, done: true }); sys('Mission ' + (i + 1) + ' complete');
+    if (first && Object.keys(G.done).length === L.length) { await say('That is the whole of Chapter 1. Not bad for a first day.'); await endCard(); }
+    if (G.set !== 'well') useSet('well', 'play', 3);
+  }
 }
 
 export function start() {
   initTerms({ show: showPart, seen: (k) => note('word', { k }) }); $('backBtn').addEventListener('click', backHome); $('wordsBtn').addEventListener('click', openWords);
   $('nbBtn').addEventListener('click', openNotebook); $('sheet').addEventListener('click', (e) => { if (e.target === $('sheet')) closeNotebook(); });
-  story().catch(e => { console.error(e); bubble('sys', 'Something broke: ' + e.message); });
+  level().catch(e => { console.error(e); bubble('sys', 'Something broke: ' + e.message); });
 }

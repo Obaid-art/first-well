@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { createStage, clamp, sstep } from '../hero/kit.js?v=25';
 import { makeParts } from './parts.js?v=2';
+import { addBenches } from './bench.js?v=5';
 
 const HW = 11.2, DZ = 6.5, YS = 8, TS = 3.4, TEXDIR = new URL('../hero/tex/', import.meta.url).href;
 const fmt = (x, d = 0) => (+x).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -24,12 +25,13 @@ export function createScene(canvas, labelBox, G) {
   const { scene } = stage, P = makeParts(THREE), add = (o) => { scene.add(o); return o; };
   // daylight: a sun with soft shadows over image-based sky light
   const sun = new THREE.DirectionalLight(0xfff1dc, 2.5); sun.position.set(-13, 24, 17); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
-  Object.assign(sun.shadow.camera, { left: -17, right: 17, top: 16, bottom: -12, near: 1, far: 70 }); sun.shadow.camera.updateProjectionMatrix(); add(sun); add(new THREE.HemisphereLight(0xdfe9f5, 0x9a8a72, 0.35));
+  Object.assign(sun.shadow.camera, { left: -17, right: 17, top: 16, bottom: -12, near: 1, far: 70 }); sun.shadow.camera.updateProjectionMatrix(); add(sun); add(sun.target); add(new THREE.HemisphereLight(0xdfe9f5, 0x9a8a72, 0.35));
 
   // ---------- photographed rock ----------
   let pending = 0; const loader = new THREE.TextureLoader(), cache = {};
   const load = (name, srgb) => { if (cache[name]) return cache[name]; pending++; const t = loader.load(TEXDIR + name + '.jpg', () => { pending--; stage.draw(); }, undefined, () => { pending--; }); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return cache[name] = t; };
   const rock = (b) => new THREE.MeshStandardMaterial({ map: load(b.tex + '_diff', true), normalMap: load(b.tex + '_nor'), roughnessMap: load(b.tex + '_arm'), aoMap: load(b.tex + '_arm'), roughness: 1, metalness: 0, color: b.tint, envMapIntensity: 0.55 });
+  const rockMat = (tex, tint) => rock({ tex, tint });
   // a vertical strip of one bed along a straight edge of the block; its outward normal is (edge direction) x (up)
   function strip(x0, z0, x1, z1, n, i, mat) {
     const rows = 5, pos = [], uv = [], idx = [], len = Math.hypot(x1 - x0, z1 - z0);
@@ -78,6 +80,8 @@ export function createScene(canvas, labelBox, G) {
         float a = across * (0.16 + 0.84 * comet(s)) * (1.0 - smoothstep(${(HW * 0.9).toFixed(1)}, ${HW.toFixed(1)}, ax)) * smoothstep(1.0, 0.86, abs(yy)) * uFlow;
         gl_FragColor = vec4(0.040, 0.024, 0.012, a * 0.88); }` });
   { const m = new THREE.Mesh(new THREE.PlaneGeometry(2 * HW, 1.7), sandFlow); m.position.set(0, 0, 0.012); m.renderOrder = 3; add(m); }
+  // the damaged zone: rock beside the well whose pores are partly blocked; how dark it is says how badly, how wide says how far
+  const dmgMat = new THREE.MeshBasicMaterial({ color: 0x1a130c, transparent: true, opacity: 0, depthWrite: false }), dmg = [-1, 1].map(sd => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.76), dmgMat); m.position.set(0, 0, 0.008); m.renderOrder = 2; m.userData.sd = sd; add(m); return m; });
   // the downhole gauge: a tool hanging in the tubing near the bottom
   const tool = new THREE.Group(); tool.add(P.at(P.cyl(0.045, 0.5, P.M.yellow, 14), 0, 0, 0)); tool.add(P.at(P.cyl(0.02, 0.12, P.M.steel, 10), 0, 0.3, 0)); tool.position.set(0, WELL.tubingEnd + 0.42, 0.012); tool.visible = false; add(tool);
 
@@ -114,19 +118,21 @@ export function createScene(canvas, labelBox, G) {
   const cams = { tour: { az: 90, el: 10, dist: 33, tx: -0.4, ty: 3.1, tz: -1 }, high: { az: 64, el: 27, dist: 50, tx: -1, ty: 4.2, tz: -2 }, play: { az: 90, el: 10, dist: 30.5, tx: -0.4, ty: 4.5, tz: -1 }, surface: { az: 97, el: 13, dist: 20, tx: -3.4, ty: YS + 1.3, tz: -1.6 }, deep: { az: 90, el: 6, dist: 19, tx: 0, ty: 1.9, tz: 0 } };
 
   // ---------- labels: instrument readings the player owns, and one callout that names a part ----------
-  const r = () => G.read, call = { key: null, a: 0, to: 0 }, readings = [];
-  readings.push(stage.label({ name: 'wellhead gauge', prio: 9, cls: 'num', order: ['ar', 'r', 'a', 'al'], gaps: [14, 34, 56], pos: () => V(0, Y1 + 3.0, 0.05), alpha: () => r().show, text: () => fmt(r().ptf) + ' <i>psi</i><small>wellhead gauge</small>' }));
-  readings.push(stage.label({ name: 'choke', prio: 7, cls: 'num sm', order: ['al', 'l', 'a', 'bl'], gaps: [16, 40, 64], pos: () => V(-1.05, Y1 + 2.95, 0), alpha: () => r().show, text: () => (r().S > 0 ? r().S + '/64 <i>in</i>' : 'shut in') + '<small>choke</small>' }));
-  readings.push(stage.label({ name: 'rate', prio: 8, cls: 'num blue', order: ['a', 'al', 'ar', 'l'], gaps: [22, 44, 66], pos: () => V(-5.4, YS + 2.1, -2.0), alpha: () => r().show, text: () => (r().rate == null ? 'settling' : fmt(r().rate) + ' <i>bbl/d</i>') + '<small>test separator</small>' }));
-  readings.push(stage.label({ name: 'downhole gauge', prio: 9, cls: 'num red', order: ['r', 'br', 'ar', 'l', 'bl'], gaps: [16, 34, 56], pos: () => V(0.12, WELL.tubingEnd + 0.45, 0.1), alpha: () => r().show * (r().gauge ? 1 : 0), text: () => fmt(r().kpa) + ' <i>kPa</i><small>downhole gauge</small>' }));
-  stage.label({ name: 'depth', prio: 3, cls: 'tag', optional: true, order: ['r', 'br', 'ar'], gaps: [10, 28], pos: () => V(-HW + 0.4, 4.2, 0.05), alpha: () => r().show, html: fmt(G.spec.depth) + ' ft of rock<small>drawn far thinner than it is</small>' });
+  const r = () => G.read, call = { key: null, a: 0, to: 0 }, readings = [], atWell = () => G.set === 'well' ? r().show : 0;
+  readings.push(stage.label({ name: 'wellhead gauge', prio: 9, cls: 'num', order: ['ar', 'r', 'a', 'al'], gaps: [14, 34, 56], pos: () => V(0, Y1 + 3.0, 0.05), alpha: atWell, text: () => fmt(r().ptf) + ' <i>psi</i><small>wellhead gauge</small>' }));
+  readings.push(stage.label({ name: 'choke', prio: 7, cls: 'num sm', order: ['al', 'l', 'a', 'bl'], gaps: [16, 40, 64], pos: () => V(-1.05, Y1 + 2.95, 0), alpha: atWell, text: () => (r().S > 0 ? r().S + '/64 <i>in</i>' : 'shut in') + '<small>choke</small>' }));
+  readings.push(stage.label({ name: 'rate', prio: 8, cls: 'num blue', order: ['a', 'al', 'ar', 'l'], gaps: [22, 44, 66], pos: () => V(-5.4, YS + 2.1, -2.0), alpha: atWell, text: () => (r().rate == null ? 'settling' : fmt(r().rate) + ' <i>bbl/d</i>') + '<small>test separator</small>' }));
+  readings.push(stage.label({ name: 'downhole gauge', prio: 9, cls: 'num red', order: ['r', 'br', 'ar', 'l', 'bl'], gaps: [16, 34, 56], pos: () => V(0.12, WELL.tubingEnd + 0.45, 0.1), alpha: () => atWell() * (r().gauge ? 1 : 0), text: () => fmt(r().kpa) + ' <i>kPa</i><small>downhole gauge</small>' }));
+  stage.label({ name: 'depth', prio: 3, cls: 'tag', optional: true, order: ['r', 'br', 'ar'], gaps: [10, 28], pos: () => V(-HW + 0.4, 4.2, 0.05), alpha: atWell, html: fmt(G.spec.depth) + ' ft of rock<small>drawn far thinner than it is</small>' });
   stage.label({ name: 'callout', prio: 10, cls: 'call', order: ['r', 'ar', 'br', 'a', 'l', 'al', 'b'], gaps: [18, 36, 60], pos: () => call.key ? A[call.key].pos : V(0, 0, 0), alpha: () => call.a, text: () => call.key ? (call.text || A[call.key].name) : '' });
   const keep = [[0, Y1 + 1.5, 0, 22], [0, Y1 + 2.6, 0, 16], [-1.05, Y1 + 2.4, 0, 16], [-5.4, YS + 1.2, -2, 30], [-4.5, YS + 1.2, -2, 18], [-6.3, YS + 1.2, -2, 18], [-8.9, YS + 1.2, -3, 36], [-8.1, YS + 1.2, -3, 22], [-9.7, YS + 1.2, -3, 22]];
   const screenKeep = [];                                                                             // rectangles of the page that labels must leave alone, e.g. a caption bar: functions returning {x0,y0,x1,y1} or null
   stage.keepouts((project) => { const out = []; keep.forEach(([x, y, z, s]) => { const p = project(V(x, y, z)); if (p) out.push({ x0: p.x - s, y0: p.y - s, x1: p.x + s, y1: p.y + s }); }); screenKeep.forEach(f => { const q = f(); if (q) out.push(q); }); return out; });
 
+  const bench = addBenches({ THREE, stage, scene, P, rockMat, G }); Object.assign(cams, bench.cams);
   let phaseS = 0, phaseT = 0;
-  stage.onUpdate((dt) => {
+  stage.onUpdate((dt, time) => {
+    bench.update(dt, time); const dz = G.read.dmg; dmgMat.opacity += ((dz ? 0.62 * dz.a : 0) - dmgMat.opacity) * (1 - Math.exp(-dt / 0.4)); if (dz) dmg.forEach(m => { const w = 0.25 + 1.9 * Math.log(dz.w / 0.328) / Math.log(6 / 0.328); m.scale.x = Math.max(0.02, w); m.position.x = m.userData.sd * (WELL.hole + w / 2); });
     const q = G.cur ? G.cur.q : 0, R = G.read, amt = clamp(q / 220, 0, 1); phaseS += dt * 0.5 * q / 450; phaseT += dt * (0.25 + 1.6 * q / 1500) * (q > 1 ? 1 : 0);
     sandFlow.uniforms.uPhase.value = phaseS; sandFlow.uniforms.uFlow.value = amt; [oilTub, oilCas].forEach(m => { m.uniforms.uPhase.value = phaseT; m.uniforms.uFlow.value = amt; });
     choke.userData.wheel.rotation.y = -R.turn; choke.userData.stem.position.y = choke.userData.stemY0 + choke.userData.travel * R.S / 64;
@@ -137,6 +143,7 @@ export function createScene(canvas, labelBox, G) {
     const wide = c.dist > 27 && !stage.cam.busy; readings.forEach(l => { l.optional = !wide; });               // in a close-up or on the way to one, a reading whose instrument is at the edge may simply be absent
   });
   return { stage, cams, anchors: A, screenKeep, texturesPending: () => pending,
+    useSet: (name) => { const x = bench.centers[name] || 0; sun.position.set(x - 13, 24, 17); sun.target.position.set(x, 0, 0); sun.target.updateMatrixWorld(); },
     point: (key, text) => { if (!A[key]) return; call.key = key; call.text = text || null; call.to = 1; }, unpoint: () => { call.to = 0; },
     wireline: (on) => { unit.visible = lub.visible = wire.visible = on; tree.userData.gauge.visible = !on; } };
 }

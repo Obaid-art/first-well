@@ -67,6 +67,24 @@
   .dock .idle { color: var(--faint); font-size: 13.5px; padding: 18px 0; text-align: center; }
   .pbtn { width: 100%; background: var(--ku); color: #fff; border: 0; border-radius: 12px; padding: 12px 16px; font: 600 15.5px var(--sans); cursor: pointer; transition: background .2s; } .pbtn:hover:not(:disabled) { background: #0039A0; } .pbtn:disabled { opacity: .4; cursor: default; }
   .pbtn.sec { background: #fff; color: var(--ku); border: 1.5px solid var(--ku); } .pbtn.sec:hover:not(:disabled) { background: #F2F6FC; }
+  /* the target and its controls */
+  .tg h4 { margin-bottom: 6px; } .tgrow { display: grid; grid-template-columns: auto minmax(40px, 1fr) auto; gap: 12px; align-items: center; margin-bottom: 8px; }
+  .tgrow b { display: block; font: 600 21px/1.1 var(--display); font-variant-numeric: tabular-nums; white-space: nowrap; } .tgrow b i { font: 500 11.5px var(--sans); font-style: normal; color: var(--muted); } .tgrow span { font: 600 9.5px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .tgrow .want { text-align: right; } .tgrow .want b { color: var(--ku); font-size: 17px; } .tg.ok .now b { color: var(--green); }
+  .bar { position: relative; height: 10px; border-radius: 5px; background: var(--line); } .bar .band { position: absolute; top: 0; height: 10px; border-radius: 5px; background: #9DB9EE; } .bar .pin { position: absolute; top: -4px; width: 4px; height: 18px; margin-left: -2px; border-radius: 2px; background: var(--ink); transition: left .25s ease; } .tg.ok .bar .pin { background: var(--green); }
+  .tg .con { margin: 0 0 8px; font: 600 12.5px var(--sans); color: var(--green); } .tg .con.bad { color: var(--red); }
+  .ctls { max-height: 34vh; overflow-y: auto; margin: 0 -4px; padding: 0 4px; } .ctl { margin-bottom: 8px; } .ctl .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; } .ctl label { font-size: 13.5px; color: var(--body); } .ctl output { font: 600 16px var(--display); font-variant-numeric: tabular-nums; white-space: nowrap; } .ctl output i { font: 500 11px var(--sans); font-style: normal; color: var(--muted); }
+  .ctl em { font: 700 9.5px var(--sans); font-style: normal; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); margin-left: 6px; } .ctl.locked label, .ctl.locked output { color: var(--faint); }
+  .ctl input[type=range] { width: 100%; height: 24px; margin: 0; accent-color: var(--ku); cursor: pointer; } .ctl input[type=range]:disabled { cursor: default; opacity: .45; }
+  .chs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; } .chs button { background: #fff; border: 1.5px solid var(--line); border-radius: 9px; padding: 6px 10px; font: 500 13px var(--sans); color: var(--ink); cursor: pointer; } .chs button:hover:not(:disabled) { border-color: var(--ku); } .chs button.on { border-color: var(--ku); background: #EEF3FC; color: var(--ku); font-weight: 600; } .chs button:disabled { cursor: default; opacity: .55; } .chs button.on:disabled { opacity: 1; }
+  .entry { display: flex; gap: 8px; margin: 4px 0 8px; } .entry input, .entry select { border: 1.5px solid var(--line); border-radius: 9px; padding: 8px 10px; font: 500 15px var(--sans); background: #fff; color: var(--ink); min-width: 0; } .entry input { flex: 1; width: 60px; }
+  .cant { display: block; margin: 8px auto 0; background: none; border: 0; color: var(--muted); font: 600 12.5px var(--sans); text-decoration: underline; text-decoration-style: dotted; cursor: pointer; } .cant:hover { color: var(--ink); }
+  .askq { margin: 0 0 10px; font: 600 16.5px/1.3 var(--display); } .asks { display: grid; gap: 7px; } .asks button { text-align: left; background: #fff; border: 1.5px solid var(--line); border-radius: 11px; padding: 9px 12px; font: 500 14px/1.35 var(--sans); color: var(--ink); cursor: pointer; } .asks button:hover:not(:disabled) { border-color: var(--ku); } .asks button.no { border-color: var(--line); color: var(--faint); text-decoration: line-through; }
+  .hub { display: grid; gap: 6px; max-height: 38vh; overflow-y: auto; } .hub button { display: flex; align-items: center; gap: 12px; text-align: left; background: #fff; border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 12px; cursor: pointer; } .hub button i { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font: 600 13px var(--display); font-style: normal; background: var(--paper2); color: var(--body); }
+  .hub button b { display: block; font: 600 15px var(--sans); color: var(--ink); } .hub button small { font-size: 11.5px; color: var(--muted); } .hub button.next { border-color: var(--ku); background: #F4F7FD; } .hub button.next i { background: var(--ku); color: #fff; } .hub button.done i { background: #E6F4EC; color: var(--green); } .hub button.later { opacity: .5; cursor: default; }
+  .msg.rulemsg { border: 2px solid var(--ku); background: #F4F7FD; } .msg.rulemsg small { display: block; font: 700 10px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ku); } .msg.rulemsg > b { display: block; font: 600 18px var(--display); color: var(--ink); margin: 2px 0 4px; } .msg.rulemsg .k { font-size: 15px; overflow-x: auto; overflow-y: hidden; } .msg.rulemsg .k .katex-display { margin: 6px 0; } .msg.rulemsg p { margin: 4px 0 0; font-size: 13.5px; }
+  .rulecard { border: 1.5px solid #C9D7F2; background: #F7F9FE; border-radius: 12px; padding: 9px 12px; margin-bottom: 8px; } .rulecard b { font: 600 15px var(--display); } .rulecard .k { font-size: 14px; margin: 3px 0; overflow-x: auto; overflow-y: hidden; } .rulecard small { color: var(--muted); font-size: 11.5px; }
+  .endrule { display: flex; align-items: baseline; gap: 14px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.12); } .endrule b { flex: 0 0 46%; font: 600 15px var(--sans); } .endrule .eq { font-size: 15px; color: #fff; }
   /* the choke wheel */
   .choke { display: grid; grid-template-columns: 92px 92px minmax(0, 1fr); gap: 12px; align-items: center; } .choke .bore { width: 92px; height: 92px; }
   .wheel { width: 92px; height: 92px; touch-action: none; cursor: grab; } .wheel:active { cursor: grabbing; } .wheel.locked { opacity: .45; cursor: default; }
@@ -115,7 +133,7 @@
 </head>
 <body>
 <header class="gtop">
-  <span class="brand">First Well<small>Act 1 · Open it up</small></span>
+  <span class="brand">First Well<small>Chapter 1</small></span>
   <div class="hud"><div>Day<b id="hDay">1</b></div><div>Produced<b id="hBbl">0 bbl</b></div><div>Sold<b id="hUsd">$0</b></div></div>
   <button class="tbtn" id="wordsBtn">Words</button><button class="tbtn" id="nbBtn" disabled>Notebook</button>
 </header>
@@ -128,7 +146,7 @@
 <script src="vendor/plotly.min.js"></script>
 <script src="physics.js?v=3"></script>
 <script type="module">
-import { start } from './game/act1.js?v=15';
+import { start } from './game/act1.js?v=22';
 start();
 </script>
 </body>
