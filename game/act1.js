@@ -2,8 +2,8 @@
    The story is one async function at the bottom of this file; everything above it is the machinery it speaks through:
    a clock, a chat thread, a dock (choke wheel, bet, job card, law tool) and the notebook. The well itself is game/sim.js.
    Nothing in the story decides a number: rates and pressures come from the model, readings from the instruments. */
-import { createScene } from './scene.js?v=11';
-import { buildMissions } from './missions.js?v=3';
+import { createScene } from './scene.js?v=16';
+import { buildMissions } from './missions.js?v=5';
 import { link, initTerms, bore, boreText, TERMS, open as openTerm } from './terms.js?v=2';
 import { createWell, dealWell, KPA } from './sim.js?v=2';
 
@@ -74,7 +74,7 @@ function dockChoke(cap, locked, needs) {
   G.cap = cap; G.locked = !!locked; need = needs || null;
   dock().innerHTML = '<h4>' + link('The choke') + '</h4><div class="choke"><svg class="wheel" viewBox="0 0 112 112" tabindex="0" aria-label="Choke handwheel"><g><circle cx="56" cy="56" r="46" fill="none" stroke="#A3261E" stroke-width="9"/>' +
     [0, 60, 120].map(a => '<rect x="12" y="52.5" width="88" height="7" rx="3" fill="#A3261E" transform="rotate(' + a + ' 56 56)"/>').join('') + '<circle cx="56" cy="56" r="11" fill="#3A4046"/><circle cx="56" cy="14" r="4.5" fill="#fff"/></g></svg>' +
-    '<div class="bore"></div><div class="rd"><b></b><em class="bt"></em><span></span><div class="steps"><button aria-label="Close a little">− close</button><button aria-label="Open a little">+ open</button></div></div></div><div class="need"><span class="st"></span></div>';
+    '<div class="bore"></div><div class="rd"><b></b><em class="bt"></em><span></span><div class="steps"><button aria-label="Close a little">− close</button><button aria-label="Open a little">+ open</button></div></div></div><button class="cant look">Watch inside the choke as you turn it</button><div class="need"><span class="st"></span></div>';
   wheelUI = dock(); const w = wheelUI.querySelector('.wheel'), [dn, up] = wheelUI.querySelectorAll('.steps button'); let drag = null;
   const ang = (e) => { const r = w.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180 / Math.PI; };
   w.addEventListener('pointerdown', (e) => { if (G.locked) return; drag = { a: ang(e), acc: 0, S0: G.S }; w.setPointerCapture(e.pointerId); });
@@ -82,6 +82,7 @@ function dockChoke(cap, locked, needs) {
   const endDrag = () => { drag = null; }; w.addEventListener('pointerup', endDrag); w.addEventListener('pointercancel', endDrag);
   w.addEventListener('keydown', (e) => { if (G.locked) return; if (e.key === 'ArrowRight' || e.key === 'ArrowUp') setChoke(Math.min(G.cap, G.S + 2)); if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') setChoke(Math.max(0, G.S - 2)); });
   dn.addEventListener('click', () => setChoke(Math.max(0, G.S - 2))); up.addEventListener('click', () => setChoke(Math.min(G.cap, G.S + 2)));
+  wheelUI.querySelector('.look').addEventListener('click', () => { if ($('backBtn').hidden) showPart('choke', 'the needle and its seat'); else backHome(); });
   paintChoke(); paintNeed();
 }
 function dockButton(label) { return new Promise(resolve => { dock().innerHTML = '<button class="pbtn">' + label + '</button>'; dock().querySelector('.pbtn').addEventListener('click', () => { dockIdle(); resolve(); }); }); }
@@ -218,7 +219,8 @@ const stepRound = (c, v) => { const n = Math.round((clamp(v, c.min, c.max) - c.m
 function control(c, box) {
   const d = el('div', 'ctl ' + c.kind + (c.locked ? ' locked' : ''), null, box);
   if (c.kind === 'slider') {
-    d.innerHTML = '<div class="top"><label>' + link(c.label) + '</label><output></output></div><input type="range">'; const inp = d.querySelector('input'), out = d.querySelector('output'); inp.min = c.min; inp.max = c.max; inp.step = c.step; inp.disabled = !!c.locked;
+    d.innerHTML = '<div class="top"><label>' + link(c.label) + '</label><output></output></div><div class="sr"><button class="ng" aria-label="One step down">−</button><input type="range"><button class="ng" aria-label="One step up">+</button></div>'; const inp = d.querySelector('input'), out = d.querySelector('output'), ng = d.querySelectorAll('.ng');
+    ng.forEach((b, k) => { b.disabled = !!c.locked; b.addEventListener('click', () => c.apply(c.get() + (k ? 1 : -1) * c.step)); }); inp.min = c.min; inp.max = c.max; inp.step = c.step; inp.disabled = !!c.locked;
     c.paint = () => { const v = c.get(); inp.value = v; out.innerHTML = fmt(v, c.dec) + (c.unit ? ' <i>' + c.unit + '</i>' : '') + (c.locked ? ' <em>fixed</em>' : ''); inp.style.setProperty('--p', (100 * (v - c.min) / (c.max - c.min)).toFixed(1) + '%'); };
     c.apply = (v) => { c.set(stepRound(c, v)); c.paint(); note('ctl', { id: c.id, v: c.get() }); }; inp.addEventListener('input', () => c.apply(+inp.value));
   } else {
@@ -232,8 +234,8 @@ function target(o) {
   return new Promise(resolve => {
     const e0 = G.events.length; let held = 0, last = 0, done = false; G.round = o; note('ask', { title: o.title, goal: +(+o.goal).toFixed(4) });
     if (o.wheel) dockChoke(o.wheel.cap, false); else { dock().innerHTML = ''; wheelUI = null; }
-    dock().insertAdjacentHTML('afterbegin', '<div class="tg"><h4>' + link(o.title) + '</h4><div class="tgrow"><div class="now"><b></b><span>now</span></div><div class="bar"><i class="band"></i><i class="pin"></i></div><div class="want"><b>' + o.goalText + '</b><span>wanted</span></div></div>' + (o.constraint ? '<p class="con"></p>' : '') + '</div>');
-    const tg = dock().querySelector('.tg'), now = tg.querySelector('.now b'), pin = tg.querySelector('.pin'), band = tg.querySelector('.band'), con = tg.querySelector('.con'), [lo, hi] = o.range, pos = (v) => clamp((v - lo) / (hi - lo), 0, 1) * 100;
+    dock().insertAdjacentHTML('afterbegin', '<div class="tg"><h4>' + link(o.title) + '</h4><div class="tgrow"><div class="now"><b></b><span>now</span></div><div class="bar"><i class="band"></i><i class="pin"></i></div><div class="want"><b>' + o.goalText + '</b><span>wanted</span></div></div><p class="where"></p>' + (o.constraint ? '<p class="con"></p>' : '') + '</div>');
+    const tg = dock().querySelector('.tg'), where = tg.querySelector('.where'), now = tg.querySelector('.now b'), pin = tg.querySelector('.pin'), band = tg.querySelector('.band'), con = tg.querySelector('.con'), [lo, hi] = o.range, pos = (v) => clamp((v - lo) / (hi - lo), 0, 1) * 100;
     if (o.entry) { tg.querySelector('.tgrow').hidden = true; } else { band.style.left = pos(o.goal - o.tol) + '%'; band.style.width = Math.max(1.2, pos(o.goal + o.tol) - pos(o.goal - o.tol)) + '%'; }
     const box = el('div', 'ctls', null, dock()); (o.controls || []).forEach(c => control(c, box));
     const finish = (res) => { if (done) return; done = true; G.round = null; note('reached', Object.assign({ title: o.title, moves: G.events.slice(e0).filter(x => x.type === 'ctl' || x.type === 'choke').length }, res || {})); dockIdle(); resolve(res || {}); };
@@ -241,7 +243,7 @@ function target(o) {
       o.check = () => { if (inp.value === '') return; const v = +inp.value * o.entry.units.find(u => u[0] === sel.value)[1]; note('answer', { v: +inp.value, unit: sel.value }); me(fmt(+inp.value) + ' ' + sel.value + '.'); if (Math.abs(v - o.goal) <= o.tol) finish({ entry: +inp.value }); else say(v < o.goal ? o.entry.low : o.entry.high, 0.2); };
       en.querySelector('button').addEventListener('click', o.check); o.fill = (v, u) => { inp.value = v; sel.value = u; }; }
     if (!o.entry) { const cant = el('button', 'cant', 'It cannot be done', dock()); cant.addEventListener('click', () => { note('cant', { right: !!o.impossible }); if (o.impossible) { me('It cannot be done.'); finish({ cant: true }); } else say('It can. Keep going.', 0.2); }); o.cant = () => cant.click(); }
-    const paint = () => { if (o.entry) return false; const v = o.metric(), cOk = !o.constraint || o.constraint.ok(), ok = Math.abs(v - o.goal) <= o.tol && (!o.steady || o.steady()) && cOk; now.innerHTML = o.show(v); pin.style.left = pos(v) + '%'; tg.classList.toggle('ok', ok); if (con) { con.innerHTML = (cOk ? '✓ ' : '✗ ') + link(o.constraint.text); con.classList.toggle('bad', !cOk); } return ok; };
+    const paint = () => { if (o.entry) return false; const v = o.metric(), cOk = !o.constraint || o.constraint.ok(), ok = Math.abs(v - o.goal) <= o.tol && (!o.steady || o.steady()) && cOk; now.innerHTML = o.show(v); pin.style.left = pos(v) + '%'; tg.classList.toggle('ok', ok); const w = o.hint ? o.hint(v) : ok ? 'That is it. Hold it there.' : o.impossible ? '' : (o.steady && !o.steady()) ? 'settling…' : !cOk ? '' : v < o.goal ? 'Below what is wanted.' : v > o.goal ? 'Above what is wanted.' : ''; if (where._s !== w) { where.textContent = w; where._s = w; } if (con) { con.innerHTML = (cOk ? '✓ ' : '✗ ') + link(o.constraint.text); con.classList.toggle('bad', !cOk); } return ok; };
     G.waiters.push({ t: 0, test: (t) => { if (done) return true; const ok = paint(); held = ok ? held + (t - last) : 0; last = t; if (ok && held >= 0.9 && !o.impossible) { finish(); return true; } return false; }, resolve: () => { } });
   });
 }

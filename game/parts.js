@@ -37,17 +37,32 @@ export function makeParts(THREE) {
     const ga = gauge(1.5); g.add(at(ga, 0, 2.98, 0.02)); g.userData.gauge = ga; g.userData.top = 3.15;
     return g;
   }
-  // ---------- the choke: an angle body, a bonnet, a rising stem with a pointer, and the handwheel the player turns ----------
-  function choke() {
-    const g = new THREE.Group();
-    g.add(box(0.34, 0.34, 0.34, M.dark)); g.add(at(flange(0.17, 0.04, M.dark, 8), 0.19, 0, 0, 0, 0, Math.PI / 2)); g.add(at(cyl(0.085, 0.3, M.dark, 20), 0, -0.3, 0)); g.add(at(flange(0.17, 0.04, M.dark, 8), 0, -0.44, 0));
+  // ---------- the choke, cut open through its axis: body, seat, and the needle that the handwheel drives down onto the seat ----------
+  // Oil comes in from the side, has to pass the ring-shaped gap between needle and seat, and leaves downward. Closing the wheel
+  // lowers the needle until the gap is gone. matIn and matOut are the moving-oil materials of the scene (inlet, outlet).
+  function choke(matIn, matOut) {
+    const g = new THREE.Group(), PI = Math.PI, V2 = (a) => a.map(q => new THREE.Vector2(q[0], q[1]));
+    const inner = std(0x4b5157, 0.5, 0.8, { side: THREE.DoubleSide }), cut = std(0xc2c8cd, 0.3, 0.9, { side: THREE.DoubleSide }), seatM = std(0x23262a, 0.22, 0.95, { side: THREE.DoubleSide }), polished = std(0xd5dadf, 0.12, 1.0);
+    const prof = [[0.055, -0.44], [0.055, -0.12], [0.045, -0.10], [0.045, -0.06], [0.11, -0.02], [0.11, 0.17], [0.17, 0.17], [0.17, -0.17], [0.085, -0.17], [0.085, -0.44]];
+    const shell = mesh(new THREE.LatheGeometry(V2(prof.concat([prof[0]])), 40, PI / 2, PI), inner); g.add(shell);                                   // the back half of the body
+    const face = (pts, mat, mirror) => { const m = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(V2(pts))), mat); if (mirror) m.scale.x = -1; m.position.z = 0.001; g.add(m); return m; };
+    face(prof, cut, true);                                                                                                                          // the cut wall on the outlet side, whole
+    face([[0.055, -0.44], [0.055, -0.12], [0.045, -0.10], [0.045, -0.06], [0.11, -0.02], [0.11, 0.0], [0.17, 0.0], [0.17, -0.17], [0.085, -0.17], [0.085, -0.44]], cut); face([[0.11, 0.11], [0.11, 0.17], [0.17, 0.17], [0.17, 0.11]], cut);   // the inlet side, with the bore through it
+    const stub = mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.05, 28, 1, true, PI / 2, PI), inner); stub.rotation.z = PI / 2; stub.position.set(0.195, 0.055, 0); g.add(stub); face([[0.17, 0.11], [0.22, 0.11], [0.22, 0.14], [0.17, 0.14]], cut); face([[0.17, -0.03], [0.22, -0.03], [0.22, 0.0], [0.17, 0.0]], cut);
+    const seatP = [[0.045, -0.118], [0.045, -0.052], [0.066, -0.040], [0.066, -0.118]]; g.add(mesh(new THREE.LatheGeometry(V2(seatP.concat([seatP[0]])), 40, PI / 2, PI), seatM)); face(seatP, seatM); face(seatP, seatM, true);       // the hard seat ring
+    // the oil: waiting in the inlet and the chamber; past the seat only while the choke is open
+    const plane = (w, h, x, y, mat, rz = 0) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); m.position.set(x, y, -0.004); m.rotation.z = rz; g.add(m); return m; };
+    plane(0.11, 0.12, 0.165, 0.055, matIn, PI / 2); plane(0.22, 0.19, 0, 0.075, matOut, PI); const outOil = plane(0.11, 0.39, 0, -0.245, matOut, PI);
+    const dry = plane(0.11, 0.39, 0, -0.245, new THREE.MeshStandardMaterial({ color: 0x2c3035, roughness: 0.6, metalness: 0.6 })); dry.position.z = -0.006;
+    g.add(at(flange(0.17, 0.04, M.dark, 8), 0, -0.44, 0));
     g.add(at(lathe([[0, 0], [0.13, 0], [0.13, 0.05], [0.085, 0.08], [0.085, 0.26], [0.11, 0.28], [0.11, 0.32], [0, 0.32]], M.dark), 0, 0.17, 0));                // bonnet
     const yoke = new THREE.Group(); [-1, 1].forEach(s => yoke.add(at(cyl(0.014, 0.42, M.steel, 8), 0.075 * s, 0.70, 0))); yoke.add(at(box(0.2, 0.03, 0.05, M.steel), 0, 0.91, 0)); g.add(yoke);
-    const stem = new THREE.Group(); stem.add(at(cyl(0.022, 0.62, M.steel, 10), 0, 0.31, 0)); stem.add(at(box(0.13, 0.02, 0.02, M.yellow), 0.05, 0.08, 0.03)); stem.position.y = 0.42; g.add(stem);
+    // the stem and, on its lower end, the needle. Closed, the needle's cone sits on the seat; each turn of the wheel lifts it
+    const stem = new THREE.Group(); stem.add(at(cyl(0.022, 0.62, M.steel, 10), 0, 0.31, 0)); stem.add(at(box(0.13, 0.02, 0.02, M.yellow), 0.05, 0.08, 0.03)); stem.add(at(cyl(0.022, 0.43, polished, 12), 0, -0.21, 0));
+    stem.add(at(lathe([[0, 0], [0.012, 0], [0.05, 0.11], [0.05, 0.155], [0.022, 0.155], [0, 0.155]], polished, 32), 0, -0.575, 0)); stem.position.y = 0.42; g.add(stem);
     const wheel = handwheel(0.21, M.red, 6); wheel.position.y = 1.08; g.add(wheel);
-    // a scale beside the stem: closed at the bottom, full bore at the top
-    g.add(at(box(0.035, 0.36, 0.012, M.face), 0.16, 0.72, 0.03)); for (let i = 0; i <= 4; i++) g.add(at(box(0.05, 0.008, 0.014, M.black), 0.16, 0.55 + 0.085 * i, 0.034));
-    g.userData = { wheel, stem, stemY0: 0.42, travel: 0.30 };
+    g.add(at(box(0.035, 0.36, 0.012, M.face), 0.16, 0.72, 0.03)); for (let k = 0; k <= 4; k++) g.add(at(box(0.05, 0.008, 0.014, M.black), 0.16, 0.55 + 0.085 * k, 0.034));
+    g.userData = { wheel, stem, stemY0: 0.42, travel: 0.2, outOil };
     return g;
   }
   // ---------- a test separator: a horizontal vessel with dished heads, on saddles, with its nozzles, relief valve and sight glass ----------

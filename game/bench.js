@@ -21,14 +21,24 @@ export function addBenches({ THREE, stage, scene, P, rockMat, G }) {
   stage.label({ name: 'block', prio: 5, cls: 'tag', order: ['b', 'bl', 'br', 'l'], gaps: [14, 34], pos: () => V(XR - 1.6, 0.1, 2.4), alpha: on('rock'), text: () => fmt(B.rock.A) + ' acres · ' + fmt(B.rock.h, 1) + ' ft thick' });
 
   // ---------- cell: oil, gas, or both ----------
-  const XC = 200; table(XC, 9, 5);
-  const R = 0.7, HC = 4.2; add(P.at(P.cyl(1.1, 0.16, M.dark, 40), 0, 0.12, 0), XC); [-1, 1].forEach(s => add(P.at(P.cyl(0.05, HC + 0.7, M.steel, 12), s * 0.95, (HC + 0.7) / 2 + 0.1, 0), XC)); add(P.at(P.box(2.2, 0.14, 0.5, M.dark), 0, HC + 0.75, 0), XC);
-  const tube = new THREE.Mesh(new THREE.CylinderGeometry(R, R, HC, 48, 1, true), glass); tube.position.set(0, 0.2 + HC / 2, 0); add(tube, XC);
-  const oilC = P.cyl(R - 0.03, 1, liquid(0x5a3410, 0.96), 48), gasC = P.cyl(R - 0.03, 1, liquid(0xf2e6b0, 0.28), 48), piston = new THREE.Group(); piston.add(P.at(P.cyl(R - 0.02, 0.16, M.steel, 48), 0, 0.08, 0), P.at(P.cyl(0.07, HC, M.steel, 14), 0, HC / 2 + 0.16, 0)); [oilC, gasC, piston].forEach(o => add(o, XC));
-  const bubbles = []; for (let i = 0; i < 18; i++) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.035 + 0.02 * ((i * 7) % 5) / 5, 12, 8), liquid(0xfff3c4, 0.9)); b.userData = { a: i * 2.4, r: 0.12 + 0.45 * ((i * 37) % 10) / 10, ph: (i * 0.61) % 1 }; add(b, XC); bubbles.push(b); }
-  const cg = P.gauge(2.2); cg.position.set(1.5, HC * 0.62, 0.1); add(cg, XC); add(P.at(P.cyl(0.03, 0.75, M.brass, 8), 1.1, HC * 0.62 - 0.3, 0, 0, 0, Math.PI / 2), XC);
-  stage.label({ name: 'cell pressure', prio: 9, cls: 'num', order: ['r', 'ar', 'br', 'a', 'al', 'b'], gaps: [22, 44, 66], pos: () => V(XC + 1.5, HC * 0.62, 0.1), alpha: on('cell'), text: () => fmt(B.cell.p) + ' <i>psi</i><small>pressure in the cell</small>' });
-  stage.label({ name: 'cell state', prio: 8, cls: 'num sm', order: ['l', 'al', 'bl'], gaps: [22, 44], pos: () => V(XC - 0.7, 0.2 + oilC.scale.y + gasC.scale.y * 0.5, 0.2), alpha: on('cell'), text: () => B.cell.gas > 0.0005 ? fmt(100 * B.cell.gas, 1) + ' % <i>gas</i><small>of the volume in the cell</small>' : 'all liquid<small>the gas is dissolved in the oil</small>' });
+  // A windowed steel cell with a piston. The crude is dark and opaque, as crude is. Gas is invisible: what shows is the liquid
+  // level falling away from the piston, and bubbles against the glass WHILE the pressure is dropping below the bubble point.
+  // Hold the pressure still and the bubbling dies away, because the gas that could leave has left.
+  const XC = 200, R = 0.7, HC = 4.2, Y0 = 0.36; table(XC, 9, 5);
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xdfe3e6, roughness: 0.1, metalness: 1 }), blockM = new THREE.MeshStandardMaterial({ color: 0x3b4046, roughness: 0.42, metalness: 0.75 }), ring = new THREE.MeshStandardMaterial({ color: 0x0d0e10, roughness: 0.8 });
+  add(P.at(P.cyl(1.2, 0.24, blockM, 48), 0, 0.12, 0), XC); add(P.at(P.cyl(0.92, 0.12, blockM, 48), 0, 0.30, 0), XC); add(P.at(P.cyl(1.2, 0.24, blockM, 48), 0, Y0 + HC + 0.18, 0), XC); add(P.at(P.cyl(0.92, 0.1, blockM, 48), 0, Y0 + HC + 0.02, 0), XC);
+  [0.62, 2.52, 3.76, 5.66].forEach(a => { const x = Math.cos(a) * 1.02, z = Math.sin(a) * 1.02; add(P.at(P.cyl(0.045, HC + 0.9, chrome, 14), x, Y0 + HC / 2, z), XC); [0.02, Y0 + HC + 0.34].forEach(y => add(P.at(P.cyl(0.085, 0.07, blockM, 6), x, y, z), XC)); });
+  const cellGlass = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.02, metalness: 0, transmission: 1, thickness: 0.18, ior: 1.5, envMapIntensity: 1.3, specularIntensity: 1 });
+  add(P.at(new THREE.Mesh(new THREE.CylinderGeometry(R, R, HC, 64, 1, true), cellGlass), 0, Y0 + HC / 2, 0), XC);
+  const crude = new THREE.MeshPhysicalMaterial({ color: 0x2b1708, roughness: 0.16, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08, envMapIntensity: 1.1 }), oilC = P.cyl(R - 0.045, 1, crude, 64); oilC.castShadow = false; add(oilC, XC);
+  const meniscus = new THREE.Mesh(new THREE.TorusGeometry(R - 0.05, 0.012, 8, 64), new THREE.MeshStandardMaterial({ color: 0x4a2a10, roughness: 0.25 })); meniscus.rotation.x = Math.PI / 2; add(meniscus, XC);
+  const piston = new THREE.Group(); piston.add(P.at(P.cyl(R - 0.04, 0.34, chrome, 64), 0, 0.17, 0)); [0.07, 0.2].forEach(y => piston.add(P.at(new THREE.Mesh(new THREE.TorusGeometry(R - 0.035, 0.022, 8, 64), ring), 0, y, 0, Math.PI / 2))); piston.add(P.at(P.cyl(0.085, HC + 1.2, chrome, 20), 0, 0.34 + (HC + 1.2) / 2, 0)); add(piston, XC);
+  const NB = 110, bubGeo = new THREE.SphereGeometry(1, 12, 9), bubMat = new THREE.MeshPhysicalMaterial({ color: 0xf3ead2, roughness: 0.05, metalness: 0, clearcoat: 1, envMapIntensity: 1.6 }), bub = new THREE.InstancedMesh(bubGeo, bubMat, NB), bs = [], M4 = new THREE.Matrix4(), Q4 = new THREE.Quaternion(), P3 = new THREE.Vector3(), S3 = new THREE.Vector3();
+  for (let k = 0; k < NB; k++) bs.push({ y: -1, r: 0, a: 0, v: 0, w: 0 }); bub.frustumCulled = false; scene.add(bub);
+  const cg = P.gauge(2.2); cg.position.set(1.72, Y0 + HC * 0.42, 0.25); add(cg, XC); add(P.at(P.cyl(0.03, 0.62, P.M.brass, 8), 1.4, Y0 + HC * 0.42 - 0.3, 0.25, 0, 0, Math.PI / 2), XC);
+  const cs = { ho: 1.7, hg: 0, act: 0, acc: 0, pLast: null, seed: 1 }, rnd = () => { cs.seed = (cs.seed * 16807) % 2147483647; return cs.seed / 2147483647; };
+  stage.label({ name: 'cell pressure', prio: 9, cls: 'num', order: ['r', 'ar', 'br', 'a', 'al', 'b'], gaps: [22, 44, 66], pos: () => V(XC + 1.72, Y0 + HC * 0.42, 0.25), alpha: on('cell'), text: () => fmt(B.cell.p) + ' <i>psi</i><small>pressure in the cell</small>' });
+  stage.label({ name: 'cell state', prio: 8, cls: 'num sm', order: ['l', 'al', 'bl'], gaps: [26, 48], pos: () => V(XC - R, Y0 + cs.ho + cs.hg * 0.5, 0.2), alpha: on('cell'), text: () => B.cell.gas > 0.0005 ? fmt(100 * B.cell.gas, 1) + ' % <i>gas</i><small>the clear space above the oil</small>' : 'all liquid<small>the gas is dissolved in the oil</small>' });
 
   // ---------- core: Darcy's experiment ----------
   const XD = 300; table(XD, 12, 5);
@@ -50,9 +60,14 @@ export function addBenches({ THREE, stage, scene, P, rockMat, G }) {
     // rock: the block's footprint follows the area, its thickness the pay; the cube is one cubic foot, by volume fractions
     const r = B.rock, side = 4.6 * Math.sqrt(r.A / 640); block.scale.set(side, Math.max(0.05, r.h / 50 * 0.9), side * 0.62); block.position.set(XR - 1.6, 0.05 + block.scale.y / 2, 0);
     const g = 2 * (1 - r.phi), w = 2 * r.phi * r.Sw, o = 2 * r.phi * (1 - r.Sw); grains.scale.y = Math.max(0.001, g); grains.position.y = g / 2; water.scale.y = Math.max(0.001, w); water.position.y = g + w / 2; oil.scale.y = Math.max(0.001, o); oil.position.y = g + w + o / 2;
-    // cell: liquid below, free gas above it, the piston on top; bubbles rise while gas is coming out
-    const c = B.cell, ho = 1.7 * c.oilRel, hg = Math.min(HC - ho - 0.3, 1.7 * c.gasRel); oilC.scale.y = ho; oilC.position.set(XC, 0.2 + ho / 2, 0); gasC.scale.y = Math.max(0.001, hg); gasC.position.set(XC, 0.2 + ho + hg / 2, 0); gasC.visible = hg > 0.004; piston.position.set(XC, 0.2 + ho + hg, 0);
-    const act = c.gas > 0 ? Math.min(1, 0.25 + c.gas * 6) : 0; bubbles.forEach(b => { const u = b.userData, f = (u.ph + time * 0.18) % 1; b.visible = act > 0 && (u.ph * 1.0 < act); b.position.set(XC + Math.cos(u.a) * u.r, 0.25 + f * (ho - 0.1), Math.sin(u.a) * u.r); });
+    // cell: the liquid, the clear gas space above it, the piston on top. Levels glide to their new values.
+    const c = B.cell, hoT = 1.7 * c.oilRel, hgT = Math.min(HC - hoT - 0.4, 1.7 * c.gasRel), kk = 1 - Math.exp(-dt / 0.22); cs.ho += (hoT - cs.ho) * kk; cs.hg += (Math.max(0, hgT) - cs.hg) * kk;
+    oilC.scale.y = cs.ho; oilC.position.set(XC, Y0 + cs.ho / 2, 0); meniscus.position.set(XC, Y0 + cs.ho, 0); piston.position.set(XC, Y0 + cs.ho + cs.hg, 0);
+    // gas leaves the oil only while the pressure is falling below the bubble point; the activity then dies away
+    if (cs.pLast == null) cs.pLast = c.p; const drop = Math.max(0, cs.pLast - c.p); cs.pLast = c.p; if (c.p < c.pb && drop > 0) cs.act = Math.min(1, cs.act + drop / 220); if (c.p >= c.pb) cs.act = 0; cs.act *= Math.exp(-dt / 2.2);
+    cs.acc += dt * 70 * cs.act; while (cs.acc >= 1) { cs.acc -= 1; const f = bs.find(x => x.y < 0); if (!f) break; f.y = 0.05 + rnd() * cs.ho * 0.85; f.r = 0.012 + 0.03 * rnd() * rnd(); f.a = 0.25 + rnd() * 2.64; f.v = 0; f.w = rnd() * 6.28; }
+    for (let k = 0; k < NB; k++) { const x = bs[k]; if (x.y >= 0) { x.v = Math.min(0.35 + 26 * x.r, x.v + dt * 3.5); x.y += x.v * dt; x.r += dt * 0.004; x.w += dt * 7; if (x.y > cs.ho - x.r) x.y = -1; }
+      if (x.y < 0) S3.setScalar(0.0001); else S3.setScalar(x.r); const a = x.a + 0.05 * Math.sin(x.w); P3.set(XC + Math.cos(a) * (R - 0.03), Y0 + Math.max(0, x.y), Math.sin(a) * (R - 0.03)); M4.compose(P3, Q4, S3); bub.setMatrixAt(k, M4); } bub.instanceMatrix.needsUpdate = true;
     cg.userData.needle.rotation.z = 2.2 - 4.4 * Math.min(1, c.p / 6000);
     // core: the holder closes on a sample of the chosen length; what comes out falls into the glass at the real rate
     const d = B.core; if (d.L !== lastL) { lastL = d.L; const Ld = 1.1 * d.L + 0.5; plug.scale.y = Ld; sleeve.scale.y = Ld; capL.position.x = XD - Ld / 2 - 0.11; capR.position.x = XD + Ld / 2 + 0.11; if (lineOut) scene.remove(lineOut);
@@ -63,5 +78,5 @@ export function addBenches({ THREE, stage, scene, P, rockMat, G }) {
     dg.userData.needle.rotation.z = 2.2 - 4.4 * Math.min(1, d.dp / 400);
   }
   return { update, centers: { well: 0, rock: XR, cell: XC, core: XD },
-    cams: { rock: { az: 76, el: 18, dist: 16.5, tx: XR + 1.2, ty: 1.1, tz: 0 }, cell: { az: 80, el: 9, dist: 12.5, tx: XC + 0.5, ty: 2.5, tz: 0 }, core: { az: 84, el: 13, dist: 14, tx: XD, ty: 1.1, tz: 0 } } };
+    cams: { rock: { az: 76, el: 18, dist: 16.5, tx: XR + 1.2, ty: 1.1, tz: 0 }, cell: { az: 72, el: 7, dist: 12.5, tx: XC + 0.5, ty: 2.7, tz: 0 }, core: { az: 84, el: 13, dist: 14, tx: XD, ty: 1.1, tz: 0 } } };
 }
