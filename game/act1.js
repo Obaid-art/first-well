@@ -13,7 +13,7 @@ const el = (tag, cls, html, parent) => { const e = document.createElement(tag); 
 const tex = (s, node, display) => { katex.render(s, node, { displayMode: !!display, throwOnError: false, trust: true, strict: false }); return node; };
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 
-const WHO = { name: 'Latifa', role: 'Field supervisor', initials: 'L' };                         // the voice on the phone
+const WHO = { name: 'Fatima', role: 'Field supervisor', initials: 'F' };                         // the voice on the phone
 const ECON = { price: 70, gauge: 25000, gaugeDays: 2 };                                            // placeholders, for the instructor to set
 const FILMS = [];                                                                                  // short films that exist in game/media, by name, e.g. 'act1_intro'
 const TURN = 2 * Math.PI / 16, PACE = 1 / 6;                                                        // game hours per real second: a day passes in about two and a half minutes                                                                     // one full turn of the wheel is 16/64 in
